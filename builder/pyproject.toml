@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "builder"
+version = "0.1.0"
+description = ""
+authors = ["Colt Gainey <Colt.Gainey@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+numpy = "^2.3.4"
+scipy = "^1.16.3"
+noise = "^1.2.2"
+pydantic = "^2.12.3"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
