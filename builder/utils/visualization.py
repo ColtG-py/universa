@@ -9,6 +9,7 @@ from typing import Optional, Dict, Any, List
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from matplotlib.figure import Figure
+from matplotlib.patches import Rectangle
 
 # Try to import PIL for additional export options
 try:
@@ -197,18 +198,65 @@ class LayerVisualizer:
         dpi: int = 150
     ) -> None:
         """
-        Visualize bedrock types.
+        Visualize bedrock types with labeled legend.
         
         Args:
             bedrock_type: Array of rock type IDs
             filename: Output filename
             dpi: Resolution in dots per inch
         """
-        fig, ax = plt.subplots(figsize=(12, 10))
+        # Import RockType enum
+        from config import RockType
         
-        im = ax.imshow(bedrock_type, cmap='Set3', interpolation='nearest')
+        fig, ax = plt.subplots(figsize=(14, 10))
         
-        cbar = plt.colorbar(im, ax=ax, label='Rock Type', shrink=0.8)
+        # Create custom discrete colormap for rock types
+        rock_type_colors = {
+            RockType.IGNEOUS: '#8B4513',      # Saddle Brown
+            RockType.SEDIMENTARY: '#DEB887',  # Burlywood
+            RockType.METAMORPHIC: '#696969',  # Dim Gray
+            RockType.LIMESTONE: '#F5DEB3',    # Wheat
+        }
+        
+        # Get unique rock types in the data
+        unique_types = np.unique(bedrock_type)
+        
+        # Create color map
+        colors = []
+        labels = []
+        for rock_type_id in unique_types:
+            try:
+                rock_type = RockType(rock_type_id)
+                colors.append(rock_type_colors.get(rock_type, '#CCCCCC'))
+                labels.append(rock_type.name.title())
+            except ValueError:
+                colors.append('#CCCCCC')
+                labels.append(f'Unknown ({rock_type_id})')
+        
+        # Create discrete colormap
+        cmap = mcolors.ListedColormap(colors)
+        bounds = list(unique_types) + [unique_types[-1] + 1]
+        norm = mcolors.BoundaryNorm(bounds, cmap.N)
+        
+        # Plot
+        im = ax.imshow(bedrock_type, cmap=cmap, norm=norm, interpolation='nearest')
+        
+        # Create legend with labeled rock types
+        legend_elements = []
+        for i, (rock_type_id, label) in enumerate(zip(unique_types, labels)):
+            legend_elements.append(
+                Rectangle((0, 0), 1, 1, fc=colors[i], label=label)
+            )
+        
+        ax.legend(
+            handles=legend_elements,
+            loc='center left',
+            bbox_to_anchor=(1.02, 0.5),
+            frameon=True,
+            fontsize=11,
+            title='Rock Types',
+            title_fontsize=12
+        )
         
         ax.set_title('Bedrock Geology', fontsize=16, fontweight='bold')
         ax.axis('off')
@@ -218,6 +266,102 @@ class LayerVisualizer:
         plt.close()
         
         print(f"✓ Saved geology visualization to {self.output_dir / filename}")
+    
+    def visualize_minerals(
+        self,
+        mineral_richness: Dict[Any, np.ndarray],
+        filename: str = "minerals.png",
+        dpi: int = 150
+    ) -> None:
+        """
+        Visualize mineral distribution across the world.
+        
+        Args:
+            mineral_richness: Dictionary mapping Mineral enum to richness arrays
+            filename: Output filename
+            dpi: Resolution in dots per inch
+        """
+        from config import Mineral
+        
+        # Filter out minerals with no deposits
+        active_minerals = {}
+        for mineral, richness in mineral_richness.items():
+            if richness is not None and richness.max() > 0:
+                active_minerals[mineral] = richness
+        
+        if not active_minerals:
+            print("⚠ No mineral deposits to visualize")
+            return
+        
+        n_minerals = len(active_minerals)
+        
+        # Calculate grid dimensions
+        n_cols = min(3, n_minerals)
+        n_rows = (n_minerals + n_cols - 1) // n_cols
+        
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(6*n_cols, 5*n_rows))
+        
+        # Flatten axes array for easier iteration
+        if n_minerals == 1:
+            axes = [axes]
+        else:
+            axes = axes.flatten() if n_rows * n_cols > 1 else [axes]
+        
+        # Color maps for different minerals
+        mineral_colormaps = {
+            'IRON': 'Reds',
+            'COPPER': 'copper',
+            'GOLD': 'YlOrBr',
+            'SILVER': 'Greys',
+            'COAL': 'gray',
+            'URANIUM': 'Greens',
+            'DIAMOND': 'Blues',
+            'EMERALD': 'Greens',
+            'RUBY': 'Reds',
+            'SAPPHIRE': 'Blues',
+        }
+        
+        for idx, (mineral, richness) in enumerate(sorted(active_minerals.items(), 
+                                                          key=lambda x: x[1].max(), 
+                                                          reverse=True)):
+            if idx >= len(axes):
+                break
+            
+            ax = axes[idx]
+            
+            # Get mineral name
+            try:
+                mineral_name = mineral.name if hasattr(mineral, 'name') else str(mineral)
+            except:
+                mineral_name = str(mineral)
+            
+            # Select colormap
+            cmap = mineral_colormaps.get(mineral_name, 'viridis')
+            
+            # Plot with transparency for zero values
+            # Mask zero values
+            masked_richness = np.ma.masked_where(richness <= 0.01, richness)
+            
+            im = ax.imshow(masked_richness, cmap=cmap, interpolation='bilinear')
+            
+            # Add colorbar
+            cbar = plt.colorbar(im, ax=ax, label='Richness', shrink=0.8)
+            
+            # Title with mineral name
+            ax.set_title(f'{mineral_name.title()} Deposits', 
+                        fontsize=14, fontweight='bold')
+            ax.axis('off')
+        
+        # Hide unused subplots
+        for idx in range(n_minerals, len(axes)):
+            axes[idx].axis('off')
+        
+        plt.suptitle('Mineral Distribution', fontsize=18, fontweight='bold', y=0.995)
+        plt.tight_layout()
+        plt.savefig(self.output_dir / filename, dpi=dpi, bbox_inches='tight')
+        plt.close()
+        
+        print(f"✓ Saved mineral visualization to {self.output_dir / filename}")
     
     def visualize_hydrology(
         self,
@@ -314,6 +458,159 @@ class LayerVisualizer:
         
         print(f"✓ Saved soil visualization to {self.output_dir / filename}")
     
+    def visualize_wind_patterns(
+        self,
+        wind_speed: np.ndarray,
+        wind_direction: np.ndarray,
+        elevation: Optional[np.ndarray] = None,
+        filename: str = "wind_patterns.png",
+        dpi: int = 150,
+        subsample: int = 16
+    ) -> None:
+        """
+        Visualize wind patterns using vector field (quiver plot).
+        
+        Args:
+            wind_speed: Array of wind speeds in m/s
+            wind_direction: Array of wind directions in degrees
+            elevation: Optional elevation for context
+            filename: Output filename
+            dpi: Resolution in dots per inch
+            subsample: Show every Nth vector (reduces density)
+        """
+        fig, ax = plt.subplots(figsize=(14, 10))
+        
+        # Show elevation as background if available
+        if elevation is not None:
+            # Create masked elevation (transparent ocean)
+            land_mask = elevation > 0
+            land_elevation = np.where(land_mask, elevation, np.nan)
+            
+            ax.imshow(land_elevation, cmap='terrain', interpolation='bilinear', alpha=0.3)
+        
+        # Subsample for cleaner visualization
+        size = wind_speed.shape[0]
+        x_indices = np.arange(0, size, subsample)
+        y_indices = np.arange(0, size, subsample)
+        X, Y = np.meshgrid(x_indices, y_indices)
+        
+        # Convert wind direction to components
+        wind_dir_rad = np.deg2rad(wind_direction)
+        wind_u = wind_speed * np.cos(wind_dir_rad)
+        wind_v = wind_speed * np.sin(wind_dir_rad)
+        
+        # Subsample wind vectors
+        U = wind_u[::subsample, ::subsample]
+        V = wind_v[::subsample, ::subsample]
+        
+        # Plot wind vectors
+        speed_subsampled = wind_speed[::subsample, ::subsample]
+        quiver = ax.quiver(
+            X, Y, U, V,
+            speed_subsampled,
+            cmap='cool',
+            scale=100,
+            width=0.003,
+            alpha=0.8
+        )
+        
+        # Add colorbar
+        cbar = plt.colorbar(quiver, ax=ax, label='Wind Speed (m/s)', shrink=0.8)
+        
+        ax.set_title('Atmospheric Wind Patterns', fontsize=16, fontweight='bold')
+        ax.set_xlim(0, size)
+        ax.set_ylim(0, size)
+        ax.set_aspect('equal')
+        ax.axis('off')
+        
+        plt.tight_layout()
+        plt.savefig(self.output_dir / filename, dpi=dpi, bbox_inches='tight')
+        plt.close()
+        
+        print(f"✓ Saved wind pattern visualization to {self.output_dir / filename}")
+    
+    def visualize_ocean_currents(
+        self,
+        ocean_current_speed: np.ndarray,
+        ocean_current_direction: np.ndarray,
+        elevation: np.ndarray,
+        filename: str = "ocean_currents.png",
+        dpi: int = 150,
+        subsample: int = 16
+    ) -> None:
+        """
+        Visualize ocean currents using vector field (quiver plot).
+        
+        Args:
+            ocean_current_speed: Array of current speeds in m/s
+            ocean_current_direction: Array of current directions in degrees
+            elevation: Elevation array (for masking land)
+            filename: Output filename
+            dpi: Resolution in dots per inch
+            subsample: Show every Nth vector (reduces density)
+        """
+        fig, ax = plt.subplots(figsize=(14, 10))
+        
+        # Create ocean mask
+        ocean_mask = elevation < 0
+        
+        # Show ocean depth as background
+        ocean_depth = np.where(ocean_mask, -elevation, np.nan)
+        
+        im = ax.imshow(ocean_depth, cmap='Blues', interpolation='bilinear', alpha=0.4)
+        plt.colorbar(im, ax=ax, label='Ocean Depth (m)', shrink=0.8)
+        
+        # Subsample for cleaner visualization
+        size = ocean_current_speed.shape[0]
+        x_indices = np.arange(0, size, subsample)
+        y_indices = np.arange(0, size, subsample)
+        X, Y = np.meshgrid(x_indices, y_indices)
+        
+        # Convert current direction to components
+        current_dir_rad = np.deg2rad(ocean_current_direction)
+        current_u = ocean_current_speed * np.cos(current_dir_rad)
+        current_v = ocean_current_speed * np.sin(current_dir_rad)
+        
+        # Mask out land areas
+        current_u_masked = np.where(ocean_mask, current_u, 0)
+        current_v_masked = np.where(ocean_mask, current_v, 0)
+        
+        # Subsample current vectors
+        U = current_u_masked[::subsample, ::subsample]
+        V = current_v_masked[::subsample, ::subsample]
+        speed_subsampled = ocean_current_speed[::subsample, ::subsample]
+        
+        # Only plot where there's significant current
+        threshold = 0.01
+        significant = speed_subsampled > threshold
+        
+        # Plot ocean current vectors
+        quiver = ax.quiver(
+            X[significant], Y[significant],
+            U[significant], V[significant],
+            speed_subsampled[significant],
+            cmap='YlOrRd',
+            scale=30,
+            width=0.004,
+            alpha=0.9
+        )
+        
+        # Add colorbar for current speed
+        cbar2 = plt.colorbar(quiver, ax=ax, label='Current Speed (m/s)', 
+                            shrink=0.8, pad=0.1)
+        
+        ax.set_title('Ocean Surface Currents', fontsize=16, fontweight='bold')
+        ax.set_xlim(0, size)
+        ax.set_ylim(0, size)
+        ax.set_aspect('equal')
+        ax.axis('off')
+        
+        plt.tight_layout()
+        plt.savefig(self.output_dir / filename, dpi=dpi, bbox_inches='tight')
+        plt.close()
+        
+        print(f"✓ Saved ocean current visualization to {self.output_dir / filename}")
+    
     def visualize_all_layers(
         self,
         world_state,
@@ -372,6 +669,33 @@ class LayerVisualizer:
                 dpi
             )
         
+        if chunk_data['mineral_richness'] is not None:
+            self.visualize_minerals(
+                chunk_data['mineral_richness'],
+                f"{prefix}_minerals.png",
+                dpi
+            )
+        
+        if chunk_data['wind_speed'] is not None and chunk_data['wind_direction'] is not None:
+            self.visualize_wind_patterns(
+                chunk_data['wind_speed'],
+                chunk_data['wind_direction'],
+                chunk_data['elevation'],
+                f"{prefix}_wind.png",
+                dpi
+            )
+        
+        if (chunk_data['ocean_current_speed'] is not None and 
+            chunk_data['ocean_current_direction'] is not None and
+            chunk_data['elevation'] is not None):
+            self.visualize_ocean_currents(
+                chunk_data['ocean_current_speed'],
+                chunk_data['ocean_current_direction'],
+                chunk_data['elevation'],
+                f"{prefix}_ocean_currents.png",
+                dpi
+            )
+        
         self.visualize_hydrology(
             chunk_data['river_presence'],
             chunk_data['water_table_depth'],
@@ -414,6 +738,11 @@ class LayerVisualizer:
             'water_table_depth': None,
             'soil_type': None,
             'soil_ph': None,
+            'mineral_richness': None,
+            'wind_speed': None,
+            'wind_direction': None,
+            'ocean_current_speed': None,
+            'ocean_current_direction': None,
         }
         
         # Check if we have any chunks
@@ -424,7 +753,7 @@ class LayerVisualizer:
         sample_chunk = next(iter(world_state.chunks.values()))
         
         # Initialize arrays for available layers
-        from config import CHUNK_SIZE
+        from config import CHUNK_SIZE, Mineral
         
         if sample_chunk.elevation is not None:
             data['elevation'] = np.zeros((size, size), dtype=np.float32)
@@ -446,6 +775,20 @@ class LayerVisualizer:
             data['soil_type'] = np.zeros((size, size), dtype=np.uint8)
         if sample_chunk.soil_ph is not None:
             data['soil_ph'] = np.zeros((size, size), dtype=np.float32)
+        if sample_chunk.wind_speed is not None:
+            data['wind_speed'] = np.zeros((size, size), dtype=np.float32)
+        if sample_chunk.wind_direction is not None:
+            data['wind_direction'] = np.zeros((size, size), dtype=np.float32)
+        if hasattr(sample_chunk, 'ocean_current_speed') and sample_chunk.ocean_current_speed is not None:
+            data['ocean_current_speed'] = np.zeros((size, size), dtype=np.float32)
+        if hasattr(sample_chunk, 'ocean_current_direction') and sample_chunk.ocean_current_direction is not None:
+            data['ocean_current_direction'] = np.zeros((size, size), dtype=np.float32)
+        
+        # Initialize mineral richness dictionary
+        if sample_chunk.mineral_richness is not None:
+            data['mineral_richness'] = {}
+            for mineral in Mineral:
+                data['mineral_richness'][mineral] = np.zeros((size, size), dtype=np.float32)
         
         # Stitch chunks together
         for (chunk_x, chunk_y), chunk in world_state.chunks.items():
@@ -458,8 +801,15 @@ class LayerVisualizer:
             chunk_height = y_end - y_start
             
             for layer_name, array in data.items():
-                if array is not None:
-                    chunk_data = getattr(chunk, layer_name)
+                if layer_name == 'mineral_richness':
+                    # Handle mineral richness dictionary separately
+                    if array is not None and chunk.mineral_richness is not None:
+                        for mineral in Mineral:
+                            if mineral in chunk.mineral_richness:
+                                array[mineral][x_start:x_end, y_start:y_end] = \
+                                    chunk.mineral_richness[mineral][:chunk_width, :chunk_height]
+                elif array is not None:
+                    chunk_data = getattr(chunk, layer_name, None)
                     if chunk_data is not None:
                         array[x_start:x_end, y_start:y_end] = chunk_data[:chunk_width, :chunk_height]
         

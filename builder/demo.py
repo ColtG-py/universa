@@ -30,7 +30,7 @@ def demo_small_world_with_viz():
     
     # Configure world generation parameters
     params = WorldGenerationParams(
-        seed=6280,
+        seed=915523,
         size=WorldSize.SMALL,  # 512x512 world
         
         # Planetary parameters
