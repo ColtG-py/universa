@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
 """
-World Builder - Demo Script
-Demonstrates world generation capabilities and outputs results.
+World Builder - Demo Script with Visualization
+Demonstrates world generation capabilities and outputs visualizations for each layer.
 """
 
 import sys
 import time
 from pathlib import Path
+import numpy as np
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from config import WorldGenerationParams, WorldSize
 from generation.pipeline import create_pipeline
-import numpy as np
+from utils.visualization import LayerVisualizer
 
 
 def print_section(title):
@@ -23,13 +24,13 @@ def print_section(title):
     print(f"{'='*70}\n")
 
 
-def demo_small_world():
-    """Generate a small demo world"""
-    print_section("WORLD BUILDER - PROCEDURAL GENERATION DEMO")
+def demo_small_world_with_viz():
+    """Generate a small demo world with full visualization"""
+    print_section("WORLD BUILDER - PROCEDURAL GENERATION WITH VISUALIZATION")
     
     # Configure world generation parameters
     params = WorldGenerationParams(
-        seed=42,
+        seed=12,
         size=WorldSize.SMALL,  # 512x512 world
         
         # Planetary parameters
@@ -39,7 +40,7 @@ def demo_small_world():
         rotation_hours=24.0,
         
         # Tectonic parameters
-        num_plates=8,
+        num_plates=30,
         plate_speed_mm_year=50.0,
         
         # Atmospheric parameters
@@ -130,30 +131,11 @@ def demo_small_world():
         print(f"  Maximum: {precipitation.max():.0f}mm/year")
         print(f"  Mean: {precipitation.mean():.0f}mm/year")
     
-    # Query specific locations
-    print_section("SAMPLE LOCATION QUERIES")
+    # Generate visualizations
+    print_section("GENERATING VISUALIZATIONS")
     
-    sample_locations = [
-        (128, 128),  # Center
-        (256, 256),  # Middle
-        (64, 384),   # Various points
-    ]
-    
-    for x, y in sample_locations:
-        data = world_state.query_location(x, y)
-        if data:
-            print(f"\nLocation ({x}, {y}):")
-            print(f"  Chunk: ({data.get('chunk_x')}, {data.get('chunk_y')})")
-            if 'elevation' in data:
-                print(f"  Elevation: {data['elevation']:.1f}m")
-            if 'temperature_c' in data:
-                print(f"  Temperature: {data['temperature_c']:.1f}°C")
-            if 'precipitation_mm' in data:
-                print(f"  Precipitation: {data['precipitation_mm']}mm/year")
-            if 'bedrock_type' in data:
-                print(f"  Bedrock: {data['bedrock_type']}")
-            if 'soil_type' in data:
-                print(f"  Soil: {data['soil_type']}")
+    visualizer = LayerVisualizer(output_dir="world_visualizations")
+    visualizer.visualize_all_layers(world_state, prefix=f"seed{params.seed}", dpi=150)
     
     # Count geological features
     print_section("GEOLOGICAL FEATURES")
@@ -175,66 +157,118 @@ def demo_small_world():
     print("\nWorld generation successful!")
     print(f"World size: {params.size}x{params.size} ({len(world_state.chunks)} chunks)")
     print(f"Generation time: {generation_time:.2f}s")
+    print(f"\nVisualizations saved to: world_visualizations/")
     
     return world_state
 
 
-def demo_chunk_query(world_state):
-    """Demonstrate chunk-based queries"""
-    print_section("CHUNK-BASED ACCESS")
+def demo_multiple_seeds():
+    """Generate multiple worlds with different seeds for comparison"""
+    print_section("MULTI-SEED COMPARISON")
     
-    # Get a specific chunk
-    chunk = world_state.get_chunk(0, 0)
+    seeds = [42, 123, 999]
     
-    if chunk:
-        print(f"Chunk (0, 0) Statistics:")
-        if chunk.elevation is not None:
-            print(f"  Elevation range: {chunk.elevation.min():.1f}m to {chunk.elevation.max():.1f}m")
-        if chunk.temperature_c is not None:
-            print(f"  Temperature range: {chunk.temperature_c.min():.1f}°C to {chunk.temperature_c.max():.1f}°C")
-        if chunk.river_presence is not None:
-            river_cells = chunk.river_presence.sum()
-            print(f"  River cells: {river_cells} ({river_cells / 256**2 * 100:.2f}%)")
-
-
-def demo_custom_parameters():
-    """Demonstrate customizable generation parameters"""
-    print_section("CUSTOM PARAMETER DEMO")
-    
-    # Create an extreme world
-    params = WorldGenerationParams(
-        seed=999,
-        size=WorldSize.SMALL,
+    for seed in seeds:
+        print(f"\nGenerating world with seed {seed}...")
         
-        # Extreme parameters
-        gravity=15.0,  # High gravity (50% more than Earth)
-        axial_tilt=45.0,  # Extreme seasons
-        num_plates=20,  # Many tectonic plates
-        ocean_percentage=0.9,  # Mostly water
-        erosion_strength=3.0,  # Strong erosion
+        params = WorldGenerationParams(
+            seed=seed,
+            size=WorldSize.SMALL,
+            num_plates=8,
+            ocean_percentage=0.7,
+            erosion_iterations=2,
+        )
+        
+        pipeline = create_pipeline(params)
+        world_state = pipeline.generate()
+        
+        # Generate visualization
+        visualizer = LayerVisualizer(output_dir="world_visualizations")
+        
+        # Just visualize elevation for comparison
+        chunk_data = visualizer._collect_chunk_data(world_state)
+        if chunk_data['elevation'] is not None:
+            visualizer.visualize_elevation(
+                chunk_data['elevation'],
+                f"seed{seed}_elevation.png",
+                dpi=100
+            )
+        
+        print(f"✓ World {seed} complete")
+    
+    print("\n✓ All seed comparisons complete!")
+    print("Check world_visualizations/ to see the differences")
+
+
+def demo_layer_by_layer():
+    """Generate a world and show each layer progressively"""
+    print_section("LAYER-BY-LAYER GENERATION DEMO")
+    
+    params = WorldGenerationParams(
+        seed=424242,
+        size=WorldSize.SMALL,
+        num_plates=10,
+        ocean_percentage=0.65,
     )
     
-    print("Creating world with extreme parameters:")
-    print(f"  Gravity: {params.gravity} m/s²")
-    print(f"  Axial tilt: {params.axial_tilt}°")
-    print(f"  Tectonic plates: {params.num_plates}")
-    print(f"  Ocean coverage: {params.ocean_percentage*100}%")
-    print(f"  Erosion strength: {params.erosion_strength}x")
+    print("Generating world with detailed layer visualization...")
     
-    print("\n(Generation skipped for demo brevity)")
+    pipeline = create_pipeline(params)
+    world_state = pipeline.generate()
+    
+    # Create visualizer
+    visualizer = LayerVisualizer(output_dir="layer_progression")
+    
+    # Collect all data
+    chunk_data = visualizer._collect_chunk_data(world_state)
+    
+    # Visualize each layer individually
+    print("\nGenerating individual layer visualizations...")
+    
+    layer_map = [
+        ('elevation', 'Elevation', 'terrain'),
+        ('plate_id', 'Tectonic Plates', 'tab20'),
+        ('tectonic_stress', 'Tectonic Stress', 'YlOrRd'),
+        ('temperature_c', 'Temperature', 'RdYlBu_r'),
+        ('precipitation_mm', 'Precipitation', 'Blues'),
+        ('bedrock_type', 'Bedrock Type', 'Set3'),
+        ('river_presence', 'Rivers', 'Blues'),
+        ('water_table_depth', 'Water Table', 'Blues_r'),
+        ('soil_type', 'Soil Type', 'YlOrBr'),
+        ('soil_ph', 'Soil pH', 'RdYlGn'),
+    ]
+    
+    for layer_name, display_name, cmap in layer_map:
+        if chunk_data[layer_name] is not None:
+            visualizer.export_to_pil(
+                chunk_data[layer_name],
+                cmap,
+                f"{layer_name}.png"
+            )
+            print(f"  ✓ {display_name}")
+    
+    print("\n✓ Layer-by-layer visualization complete!")
+    print("Check layer_progression/ directory")
 
 
 def main():
     """Main demo function"""
     try:
-        # Run main demo
-        world_state = demo_small_world()
+        print("\n" + "🌍 "*20)
+        print("WORLD BUILDER - GENERATION & VISUALIZATION DEMO")
+        print("🌍 "*20 + "\n")
         
-        # Demonstrate chunk queries
-        demo_chunk_query(world_state)
+        # Demo 1: Full world with all visualizations
+        print("\n📍 DEMO 1: Complete World Generation with Visualization")
+        world_state = demo_small_world_with_viz()
         
-        # Show custom parameters
-        demo_custom_parameters()
+        # # Demo 2: Multiple seeds for comparison
+        # print("\n📍 DEMO 2: Multi-Seed Comparison")
+        # demo_multiple_seeds()
+        
+        # # Demo 3: Layer-by-layer visualization
+        # print("\n📍 DEMO 3: Layer-by-Layer Visualization")
+        # demo_layer_by_layer()
         
         print_section("ALL DEMOS COMPLETE")
         print("\nThe World Builder generation engine is ready for use!")
@@ -244,6 +278,11 @@ def main():
         print("  ✓ Chunk-based architecture for scalability")
         print("  ✓ Deterministic generation (same seed = same world)")
         print("  ✓ Scientific accuracy in climate, geology, and hydrology")
+        print("  ✓ Comprehensive layer visualization")
+        
+        print("\nVisualization Directories:")
+        print("  • world_visualizations/ - Full world renders")
+        print("  • layer_progression/ - Individual layer exports")
         
         return 0
         
