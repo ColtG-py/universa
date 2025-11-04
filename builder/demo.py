@@ -30,7 +30,7 @@ def demo_small_world_with_viz():
     
     # Configure world generation parameters
     params = WorldGenerationParams(
-        seed=12,
+        seed=6280,
         size=WorldSize.SMALL,  # 512x512 world
         
         # Planetary parameters
@@ -40,7 +40,7 @@ def demo_small_world_with_viz():
         rotation_hours=24.0,
         
         # Tectonic parameters
-        num_plates=30,
+        num_plates=60,
         plate_speed_mm_year=50.0,
         
         # Atmospheric parameters
@@ -143,7 +143,8 @@ def demo_small_world_with_viz():
     feature_counts = {}
     for chunk in world_state.chunks.values():
         for feature in chunk.geological_features:
-            feature_type = feature.type.value
+            print(feature)
+            feature_type = feature.type
             feature_counts[feature_type] = feature_counts.get(feature_type, 0) + 1
     
     if feature_counts:

@@ -116,7 +116,7 @@ class WorldGenerationParams(BaseModel):
     rotation_hours: float = Field(24.0, description="Day length in hours")
     
     # Tectonic Parameters
-    num_plates: int = Field(12, ge=4, le=30, description="Number of tectonic plates")
+    num_plates: int = Field(12, ge=4, le=100, description="Number of tectonic plates")
     plate_speed_mm_year: float = Field(50.0, description="Plate movement speed in mm/year")
     
     # Atmospheric Parameters

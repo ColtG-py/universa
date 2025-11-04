@@ -1,7 +1,7 @@
 """
-World Builder - Pass 2: Tectonic Plate System
-Generates tectonic plates using Voronoi diagrams.
-Plates drive geological activity and mountain formation.
+World Builder - Pass 2: Tectonic Plate System (FIXED VERSION)
+Generates tectonic plates with more organic, realistic boundaries.
+Uses domain-warped Voronoi to create irregular plate shapes.
 """
 
 import numpy as np
@@ -10,11 +10,17 @@ from typing import List
 from config import WorldGenerationParams
 from models.world import WorldState, TectonicSystem, TectonicPlate
 from utils.spatial import generate_voronoi_diagram
+from utils.noise import NoiseGenerator
 
 
 def execute(world_state: WorldState, params: WorldGenerationParams):
     """
-    Generate tectonic plate system using Voronoi diagrams.
+    Generate tectonic plate system with organic boundaries.
+    
+    CHANGES FROM ORIGINAL:
+    - Added domain warping to Voronoi boundaries for irregular shapes
+    - Reduced harsh geometric appearance
+    - More realistic plate boundaries
     
     Args:
         world_state: World state to update
@@ -24,12 +30,16 @@ def execute(world_state: WorldState, params: WorldGenerationParams):
     seed = params.seed
     num_plates = params.num_plates
     
-    print(f"  - Generating {num_plates} tectonic plates...")
+    print(f"  - Generating {num_plates} tectonic plates with organic boundaries...")
     
-    # Generate Voronoi diagram for plates
+    # Generate base Voronoi diagram
     plate_map, plate_centers = generate_voronoi_diagram(
         size, size, num_plates, seed
     )
+    
+    # NEW: Apply domain warping to make boundaries more organic
+    print(f"  - Applying domain warping for realistic plate boundaries...")
+    plate_map = apply_domain_warping_to_plates(plate_map, size, seed)
     
     # Generate plate velocities
     rng = np.random.default_rng(seed)
@@ -113,3 +123,70 @@ def execute(world_state: WorldState, params: WorldGenerationParams):
     
     print(f"  - {oceanic_count} oceanic plates, {continental_count} continental plates")
     print(f"  - Average plate speed: {params.plate_speed_mm_year:.1f} mm/year")
+
+
+def apply_domain_warping_to_plates(
+    plate_map: np.ndarray,
+    size: int,
+    seed: int,
+    warp_strength: float = 150.0
+) -> np.ndarray:
+    """
+    Apply domain warping to Voronoi plate boundaries to create organic shapes.
+    
+    This makes tectonic plates look more realistic by warping their boundaries
+    with noise, similar to how real tectonic plates have irregular shapes.
+    
+    Args:
+        plate_map: Original Voronoi plate map
+        size: Size of the map
+        seed: Random seed for reproducibility
+        warp_strength: How much to warp boundaries (in pixels)
+        
+    Returns:
+        Warped plate map with organic boundaries
+    """
+    # Create two noise fields for X and Y warping
+    warp_noise_x = NoiseGenerator(
+        seed=seed + 5000,
+        octaves=4,
+        persistence=0.5,
+        lacunarity=2.0,
+        scale=size / 4.0  # Large-scale warping
+    )
+    
+    warp_noise_y = NoiseGenerator(
+        seed=seed + 6000,
+        octaves=4,
+        persistence=0.5,
+        lacunarity=2.0,
+        scale=size / 4.0
+    )
+    
+    # Generate warp fields
+    print(f"    - Generating warp fields...")
+    warp_x = warp_noise_x.generate_perlin_2d(size, size, 0, 0, normalize=False)
+    warp_y = warp_noise_y.generate_perlin_2d(size, size, 0, 0, normalize=False)
+    
+    # Scale warp fields
+    warp_x = warp_x * warp_strength
+    warp_y = warp_y * warp_strength
+    
+    # Apply warping
+    print(f"    - Applying domain warp to plate boundaries...")
+    warped_plate_map = np.zeros_like(plate_map)
+    
+    for y in range(size):
+        for x in range(size):
+            # Calculate warped sampling position
+            sample_x = x + warp_x[x, y]
+            sample_y = y + warp_y[x, y]
+            
+            # Clamp to bounds
+            sample_x = int(np.clip(sample_x, 0, size - 1))
+            sample_y = int(np.clip(sample_y, 0, size - 1))
+            
+            # Sample from warped position
+            warped_plate_map[x, y] = plate_map[sample_x, sample_y]
+    
+    return warped_plate_map
