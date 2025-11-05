@@ -12,10 +12,13 @@ APPROACH:
 - Track momentum for stream coherence
 - Rivers form where discharge is high
 - Exponential averaging for temporal smoothing
+
+OPTIMIZED with Numba JIT compilation for performance.
 """
 
 import numpy as np
 from scipy.ndimage import gaussian_filter
+from numba import jit
 
 from config import WorldGenerationParams, CHUNK_SIZE
 from models.world import WorldState
@@ -74,12 +77,15 @@ def execute(world_state: WorldState, params: WorldGenerationParams):
     # STEP 4: Simulate water particles
     print(f"    - Simulating water particle flow...")
     
-    # Number of particles per cell proportional to precipitation
-    # More rain = more particles spawned
-    num_iterations = 5  # Multiple passes for accumulation
-    particles_per_mm = 0.02  # Particles per mm of precipitation
+    # INCREASED iterations for better channel formation
+    num_iterations = 20  # Increased from 3
+    particles_per_mm = 0.5  # Slightly increased for more samples
     
     land_mask = elevation_global > 0
+    num_land_cells = land_mask.sum()
+    
+    print(f"    - Land cells: {num_land_cells:,}")
+    print(f"    - Precipitation range: {precip_global[land_mask].min():.1f} - {precip_global[land_mask].max():.1f} mm")
     
     for iteration in range(num_iterations):
         # Reset tracking for this iteration
@@ -87,67 +93,94 @@ def execute(world_state: WorldState, params: WorldGenerationParams):
         momentum_x_track.fill(0)
         momentum_y_track.fill(0)
         
-        # Spawn particles at each land cell proportional to precipitation
-        for y in range(size):
-            for x in range(size):
-                if not land_mask[x, y]:
-                    continue
-                
-                precip = precip_global[x, y]
-                num_particles = int(precip * particles_per_mm)
-                
-                # Spawn multiple particles per cell for high precipitation
-                for _ in range(max(1, num_particles)):
-                    simulate_particle(
-                        x, y,
-                        elevation_global,
-                        grad_x, grad_y,
-                        discharge_map,
-                        momentum_x_map, momentum_y_map,
-                        discharge_track,
-                        momentum_x_track, momentum_y_track,
-                        size,
-                        precip / 1000.0  # Convert mm to m³ volume
-                    )
+        # Spawn and simulate particles (JIT-optimized)
+        simulate_all_particles(
+            size,
+            land_mask,
+            precip_global,
+            particles_per_mm,
+            elevation_global,
+            grad_x,
+            grad_y,
+            discharge_map,
+            momentum_x_map,
+            momentum_y_map,
+            discharge_track,
+            momentum_x_track,
+            momentum_y_track
+        )
         
         # Exponential averaging for temporal smoothing
-        # This creates smooth, persistent discharge patterns
-        learning_rate = 0.1
+        # INCREASED learning rate for faster channel formation
+        learning_rate = 0.5  # Increased from 0.1
         
         discharge_map = (1.0 - learning_rate) * discharge_map + learning_rate * discharge_track
         momentum_x_map = (1.0 - learning_rate) * momentum_x_map + learning_rate * momentum_x_track
         momentum_y_map = (1.0 - learning_rate) * momentum_y_map + learning_rate * momentum_y_track
         
-        print(f"      Iteration {iteration + 1}/{num_iterations} complete")
+        if (iteration + 1) % 2 == 0 or iteration == num_iterations - 1:
+            print(f"      Iteration {iteration + 1}/{num_iterations} complete")
+            print(f"        Discharge range: {discharge_map[land_mask].min():.6f} - {discharge_map[land_mask].max():.6f}")
     
-    # STEP 5: Apply smoothing to discharge for natural river patterns
-    print(f"    - Smoothing discharge patterns...")
+    # STEP 5: Apply MINIMAL smoothing to preserve channels
+    print(f"    - Applying minimal smoothing to preserve channels...")
     
-    discharge_map = gaussian_filter(discharge_map, sigma=1.5)
+    # Much lighter smoothing to preserve narrow river channels
+    discharge_map = gaussian_filter(discharge_map, sigma=0.01)  # Reduced from 1.5
     
-    # STEP 6: Normalize discharge using error function for [0, 1] range
-    # Higher discharge = more likely to be a river
+    print(f"    - Post-smoothing discharge range: {discharge_map[land_mask].min():.6f} - {discharge_map[land_mask].max():.6f}")
+    
+    # STEP 6: Normalize discharge using logarithmic scaling
+    print(f"    - Normalizing discharge with log scaling...")
+    
     discharge_normalized = np.zeros_like(discharge_map)
     
-    # Use error function for smooth normalization (as in the article)
-    # This creates a sigmoid-like curve
-    for y in range(size):
-        for x in range(size):
-            if land_mask[x, y]:
-                # Scale factor controls activation threshold
-                discharge_normalized[x, y] = np.tanh(0.4 * discharge_map[x, y])
+    # Use logarithmic normalization to handle wide range
+    discharge_log = np.log10(discharge_map + 1.0)
+    
+    # Normalize to [0, 1] range
+    log_min = discharge_log[land_mask].min()
+    log_max = discharge_log[land_mask].max()
+    
+    if log_max > log_min:
+        discharge_normalized[land_mask] = (discharge_log[land_mask] - log_min) / (log_max - log_min)
+    
+    print(f"    - Log discharge range: {log_min:.6f} - {log_max:.6f}")
+    print(f"    - Normalized discharge mean: {discharge_normalized[land_mask].mean():.6f}")
+    print(f"    - Normalized discharge median: {np.median(discharge_normalized[land_mask]):.6f}")
     
     # STEP 7: Determine rivers based on discharge threshold
     print(f"    - Identifying river channels...")
     
-    # Rivers form where discharge is in top percentile
-    river_threshold = np.percentile(discharge_normalized[land_mask], 97)  # Top 3%
+    # Get discharge values only on land
+    land_discharge = discharge_normalized[land_mask]
     
-    river_presence = discharge_normalized > river_threshold
+    # Calculate percentile thresholds
+    p90 = np.percentile(land_discharge, 90)
+    p95 = np.percentile(land_discharge, 95)
+    p97 = np.percentile(land_discharge, 97)
+    p99 = np.percentile(land_discharge, 99)
+    
+    print(f"    - Discharge percentiles:")
+    print(f"      90th: {p90:.6f}")
+    print(f"      95th: {p95:.6f}")
+    print(f"      97th: {p97:.6f}")
+    print(f"      99th: {p99:.6f}")
+    
+    # Use 95th percentile for more visible river networks
+    river_threshold = p95
+    
+    print(f"    - River threshold (95th percentile): {river_threshold:.6f}")
+    
+    # Only mark rivers on land cells that exceed threshold
+    river_presence = np.logical_and(land_mask, discharge_normalized > river_threshold)
+    
+    num_river_cells = river_presence.sum()
+    print(f"    - River cells identified: {num_river_cells:,} ({num_river_cells / num_land_cells * 100:.2f}% of land)")
     
     # Calculate river flow magnitude (m³/s)
-    # Proportional to discharge
-    river_flow = np.where(river_presence, discharge_map * 10.0, 0.0)
+    # Use original discharge values, scaled appropriately
+    river_flow = np.where(river_presence, discharge_map * 0.001, 0.0)
     
     # STEP 8: Store results in chunks
     print(f"    - Storing river data in chunks...")
@@ -182,19 +215,69 @@ def execute(world_state: WorldState, params: WorldGenerationParams):
                         chunk.discharge[local_x, local_y] = discharge_normalized[global_x, global_y]
     
     # STEP 9: Calculate statistics
-    rivers = discharge_normalized[river_presence]
-    
-    if len(rivers) > 0:
+    if num_river_cells > 0:
+        rivers = discharge_normalized[river_presence]
+        
         print(f"  - River network statistics:")
-        print(f"    Total river cells: {river_presence.sum()}")
-        print(f"    River coverage: {river_presence.sum() / land_mask.sum() * 100:.2f}% of land")
+        print(f"    Total river cells: {num_river_cells:,}")
+        print(f"    River coverage: {num_river_cells / num_land_cells * 100:.2f}% of land")
         print(f"    Mean discharge: {rivers.mean():.3f}")
         print(f"    Max discharge: {rivers.max():.3f}")
         print(f"    Mean flow: {river_flow[river_presence].mean():.1f} m³/s")
+        print(f"    Max flow: {river_flow[river_presence].max():.1f} m³/s")
+    else:
+        print(f"  - WARNING: No river network generated!")
     
     print(f"  - River networks generated (particle-based method)")
 
 
+@jit(nopython=True)
+def simulate_all_particles(
+    size: int,
+    land_mask: np.ndarray,
+    precip_global: np.ndarray,
+    particles_per_mm: float,
+    elevation_global: np.ndarray,
+    grad_x: np.ndarray,
+    grad_y: np.ndarray,
+    discharge_map: np.ndarray,
+    momentum_x_map: np.ndarray,
+    momentum_y_map: np.ndarray,
+    discharge_track: np.ndarray,
+    momentum_x_track: np.ndarray,
+    momentum_y_track: np.ndarray
+):
+    """
+    JIT-compiled function to spawn and simulate all particles.
+    """
+    # Spawn particles at each land cell proportional to precipitation
+    for y in range(size):
+        for x in range(size):
+            if not land_mask[x, y]:
+                continue
+            
+            precip = precip_global[x, y]
+            num_particles = int(precip * particles_per_mm)
+            
+            # Use much smaller volume to prevent saturation
+            volume = precip / 100000.0
+            
+            # Spawn multiple particles per cell for high precipitation
+            for _ in range(max(1, num_particles)):
+                simulate_particle(
+                    x, y,
+                    elevation_global,
+                    grad_x, grad_y,
+                    discharge_map,
+                    momentum_x_map, momentum_y_map,
+                    discharge_track,
+                    momentum_x_track, momentum_y_track,
+                    size,
+                    volume
+                )
+
+
+@jit(nopython=True)
 def simulate_particle(
     start_x: int,
     start_y: int,
@@ -212,24 +295,16 @@ def simulate_particle(
 ):
     """
     Simulate a single water particle flowing downhill.
-    
-    Args:
-        start_x, start_y: Starting position
-        elevation: Global elevation map
-        grad_x, grad_y: Elevation gradients
-        discharge_map, momentum maps: Current state
-        discharge_track, momentum tracks: Accumulation buffers
-        size: World size
-        volume: Particle volume (water mass)
+    JIT-compiled for performance.
     """
     # Particle state
     pos_x, pos_y = float(start_x), float(start_y)
     speed_x, speed_y = 0.0, 0.0
     
     # Simulation parameters
-    max_steps = 500
+    max_steps = 100  # INCREASED from 300 to let particles flow further
     gravity = 1.0
-    momentum_transfer = 0.3
+    momentum_transfer = 1  # INCREASED from 0.3 for stronger channel coherence
     
     for step in range(max_steps):
         # Current integer position
@@ -248,8 +323,8 @@ def simulate_particle(
         local_grad_y = -grad_y[ix, iy]
         
         # Gravity force (downhill)
-        speed_x += gravity * local_grad_x / volume
-        speed_y += gravity * local_grad_y / volume
+        speed_x += gravity * local_grad_x
+        speed_y += gravity * local_grad_y
         
         # Get local stream momentum
         stream_momentum_x = momentum_x_map[ix, iy]
@@ -258,18 +333,18 @@ def simulate_particle(
         
         # Apply momentum transfer from stream (coupling to other particles)
         if stream_momentum_x != 0 or stream_momentum_y != 0:
-            # Momentum transfer proportional to alignment with stream
+            # Momentum transfer proportional to discharge
             stream_magnitude = np.sqrt(stream_momentum_x**2 + stream_momentum_y**2)
-            speed_magnitude = np.sqrt(speed_x**2 + speed_y**2)
             
-            if stream_magnitude > 0 and speed_magnitude > 0:
-                # Dot product for alignment
-                alignment = (stream_momentum_x * speed_x + stream_momentum_y * speed_y) / (stream_magnitude * speed_magnitude)
+            if stream_magnitude > 0:
+                # Normalize stream momentum
+                stream_dir_x = stream_momentum_x / stream_magnitude
+                stream_dir_y = stream_momentum_y / stream_magnitude
                 
                 # Transfer momentum from stream to particle
-                transfer_factor = momentum_transfer * alignment / (volume + local_discharge + 0.001)
-                speed_x += transfer_factor * stream_momentum_x
-                speed_y += transfer_factor * stream_momentum_y
+                transfer_strength = momentum_transfer * local_discharge
+                speed_x += transfer_strength * stream_dir_x
+                speed_y += transfer_strength * stream_dir_y
         
         # Accumulate discharge at current cell
         discharge_track[ix, iy] += volume
@@ -278,7 +353,7 @@ def simulate_particle(
         momentum_x_track[ix, iy] += volume * speed_x
         momentum_y_track[ix, iy] += volume * speed_y
         
-        # Normalize speed to move exactly one cell per step (dynamic time-step)
+        # Normalize speed to move exactly one cell per step
         speed_magnitude = np.sqrt(speed_x**2 + speed_y**2)
         
         if speed_magnitude < 0.001:

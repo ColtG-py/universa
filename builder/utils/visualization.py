@@ -363,26 +363,139 @@ class LayerVisualizer:
         
         print(f"✓ Saved mineral visualization to {self.output_dir / filename}")
     
+    def visualize_rivers(
+        self,
+        river_presence: np.ndarray,
+        river_flow: Optional[np.ndarray] = None,
+        elevation: Optional[np.ndarray] = None,
+        discharge: Optional[np.ndarray] = None,
+        filename: str = "rivers.png",
+        dpi: int = 150
+    ) -> None:
+        """
+        Dedicated visualization for river networks.
+        
+        Args:
+            river_presence: Boolean array of river locations
+            river_flow: Optional array of river flow rates
+            elevation: Optional elevation for terrain context
+            discharge: Optional discharge values for debugging
+            filename: Output filename
+            dpi: Resolution in dots per inch
+        """
+        # Check if we have any rivers
+        has_rivers = np.any(river_presence)
+        
+        if not has_rivers:
+            print("⚠ No rivers to visualize")
+            if discharge is not None:
+                print(f"   Discharge stats: min={discharge.min():.4f}, max={discharge.max():.4f}, mean={discharge.mean():.4f}")
+                print(f"   Non-zero discharge cells: {np.sum(discharge > 0)}")
+            return
+        
+        fig, ax = plt.subplots(figsize=(14, 12))
+        
+        # Show elevation as base layer if available
+        if elevation is not None:
+            # Create terrain background
+            land_mask = elevation > 0
+            land_elevation = np.where(land_mask, elevation, np.nan)
+            
+            # Show land in muted terrain colors
+            ax.imshow(land_elevation, cmap='terrain', interpolation='bilinear', alpha=0.4)
+        
+        # Overlay rivers
+        if river_flow is not None and np.any(river_flow > 0):
+            # Use flow magnitude to show river intensity
+            river_flow_masked = np.ma.masked_where(river_flow <= 0, river_flow)
+            
+            # Create custom colormap: light cyan to deep blue
+            colors_river = [
+                (0.7, 1.0, 1.0),    # Very light cyan
+                (0.0, 0.8, 1.0),    # Bright cyan
+                (0.0, 0.5, 1.0),    # Medium blue
+                (0.0, 0.2, 0.8),    # Deep blue
+            ]
+            n_bins = 256
+            cmap_river = mcolors.LinearSegmentedColormap.from_list('rivers', colors_river, N=n_bins)
+            
+            im = ax.imshow(river_flow_masked, cmap=cmap_river, interpolation='nearest', alpha=0.95)
+            cbar = plt.colorbar(im, ax=ax, label='River Flow (m³/s)', shrink=0.8, pad=0.02)
+        else:
+            # Just show river presence as bright cyan
+            river_display = np.zeros((*river_presence.shape, 4))  # RGBA
+            river_display[river_presence] = [0, 0.9, 1.0, 1.0]  # Bright cyan, fully opaque
+            
+            ax.imshow(river_display, interpolation='nearest')
+        
+        # Calculate and display statistics
+        num_river_cells = np.sum(river_presence)
+        
+        if elevation is not None:
+            land_cells = np.sum(elevation > 0)
+            river_pct = (num_river_cells / land_cells * 100) if land_cells > 0 else 0
+            title = f'River Networks\n{num_river_cells:,} cells ({river_pct:.2f}% of land)'
+        else:
+            title = f'River Networks\n{num_river_cells:,} cells'
+        
+        ax.set_title(title, fontsize=18, fontweight='bold', pad=20)
+        ax.axis('off')
+        
+        plt.tight_layout()
+        plt.savefig(self.output_dir / filename, dpi=dpi, bbox_inches='tight')
+        plt.close()
+        
+        print(f"✓ Saved river network visualization to {self.output_dir / filename}")
+        
+        # Print detailed diagnostics
+        print(f"   River cells: {num_river_cells:,}")
+        if river_flow is not None:
+            flow_values = river_flow[river_presence]
+            if len(flow_values) > 0:
+                print(f"   Flow range: {flow_values.min():.1f} - {flow_values.max():.1f} m³/s")
+                print(f"   Mean flow: {flow_values.mean():.1f} m³/s")
+                print(f"   Median flow: {np.median(flow_values):.1f} m³/s")
+        
+        if discharge is not None:
+            discharge_values = discharge[river_presence]
+            if len(discharge_values) > 0:
+                print(f"   Discharge range: {discharge_values.min():.3f} - {discharge_values.max():.3f}")
+                print(f"   Mean discharge: {discharge_values.mean():.3f}")
+    
     def visualize_hydrology(
         self,
         river_presence: Optional[np.ndarray] = None,
+        river_flow: Optional[np.ndarray] = None,
         water_table_depth: Optional[np.ndarray] = None,
+        elevation: Optional[np.ndarray] = None,
+        discharge: Optional[np.ndarray] = None,
         filename: str = "hydrology.png",
         dpi: int = 150
     ) -> None:
         """
-        Visualize hydrological features.
+        Visualize hydrological features with improved river rendering.
         
         Args:
             river_presence: Boolean array of river locations
+            river_flow: Array of river flow rates
             water_table_depth: Array of water table depths
+            elevation: Optional elevation for context
+            discharge: Optional discharge values for debugging
             filename: Output filename
             dpi: Resolution in dots per inch
         """
-        n_plots = sum([river_presence is not None, water_table_depth is not None])
+        # Count how many plots we need
+        has_rivers = river_presence is not None and np.any(river_presence)
+        has_discharge = discharge is not None
+        has_water_table = water_table_depth is not None
+        
+        n_plots = sum([has_rivers, has_water_table])
         
         if n_plots == 0:
             print("⚠ No hydrology data to visualize")
+            if discharge is not None:
+                print(f"   Discharge stats: min={discharge.min():.4f}, max={discharge.max():.4f}, mean={discharge.mean():.4f}")
+                print(f"   Non-zero discharge cells: {np.sum(discharge > 0)}")
             return
         
         if n_plots == 2:
@@ -392,14 +505,53 @@ class LayerVisualizer:
         
         plot_idx = 0
         
-        if river_presence is not None:
+        # RIVER VISUALIZATION
+        if has_rivers:
             ax = ax1 if n_plots == 2 else ax1
-            im1 = ax.imshow(river_presence, cmap='Blues', interpolation='nearest')
-            ax.set_title('River Networks', fontsize=16, fontweight='bold')
+            
+            # Show elevation as base layer if available
+            if elevation is not None:
+                # Create terrain background
+                land_mask = elevation > 0
+                land_elevation = np.where(land_mask, elevation, np.nan)
+                
+                # Show land in muted terrain colors
+                ax.imshow(land_elevation, cmap='terrain', interpolation='bilinear', alpha=0.3)
+            
+            # Overlay rivers in bright, visible color
+            if river_flow is not None and np.any(river_flow > 0):
+                # Use flow magnitude to show river intensity
+                river_flow_masked = np.ma.masked_where(river_flow <= 0, river_flow)
+                
+                # Create custom colormap: cyan to dark blue
+                colors_river = [(0, 1, 1), (0, 0.5, 1), (0, 0, 0.8)]  # Cyan to dark blue
+                n_bins = 100
+                cmap_river = mcolors.LinearSegmentedColormap.from_list('rivers', colors_river, N=n_bins)
+                
+                im1 = ax.imshow(river_flow_masked, cmap=cmap_river, interpolation='nearest', alpha=0.9)
+                cbar1 = plt.colorbar(im1, ax=ax, label='River Flow (m³/s)', shrink=0.8)
+            else:
+                # Just show river presence as bright cyan
+                river_display = np.zeros((*river_presence.shape, 4))  # RGBA
+                river_display[river_presence] = [0, 1, 1, 1]  # Bright cyan, fully opaque
+                
+                ax.imshow(river_display, interpolation='nearest')
+            
+            # Count and display statistics
+            num_river_cells = np.sum(river_presence)
+            if elevation is not None:
+                land_cells = np.sum(elevation > 0)
+                river_pct = (num_river_cells / land_cells * 100) if land_cells > 0 else 0
+                title = f'River Networks ({num_river_cells:,} cells, {river_pct:.2f}% of land)'
+            else:
+                title = f'River Networks ({num_river_cells:,} cells)'
+            
+            ax.set_title(title, fontsize=16, fontweight='bold')
             ax.axis('off')
             plot_idx += 1
         
-        if water_table_depth is not None:
+        # GROUNDWATER VISUALIZATION
+        if has_water_table:
             ax = ax2 if n_plots == 2 else ax1
             im2 = ax.imshow(water_table_depth, cmap='Blues_r', interpolation='bilinear')
             cbar2 = plt.colorbar(im2, ax=ax, label='Water Table Depth (m)', shrink=0.8)
@@ -411,6 +563,15 @@ class LayerVisualizer:
         plt.close()
         
         print(f"✓ Saved hydrology visualization to {self.output_dir / filename}")
+        
+        # Print diagnostics
+        if has_rivers:
+            print(f"   River cells: {np.sum(river_presence):,}")
+            if river_flow is not None:
+                flow_values = river_flow[river_presence]
+                if len(flow_values) > 0:
+                    print(f"   Flow range: {flow_values.min():.1f} - {flow_values.max():.1f} m³/s")
+                    print(f"   Mean flow: {flow_values.mean():.1f} m³/s")
     
     def visualize_soil(
         self,
@@ -632,6 +793,9 @@ class LayerVisualizer:
         # Collect data from all chunks
         chunk_data = self._collect_chunk_data(world_state)
         
+        # Get seed for river filename
+        seed = getattr(world_state, 'seed', 'unknown')
+        
         # Visualize each available layer
         if chunk_data['elevation'] is not None:
             self.visualize_elevation(
@@ -696,9 +860,24 @@ class LayerVisualizer:
                 dpi
             )
         
+        # DEDICATED RIVER VISUALIZATION
+        if chunk_data['river_presence'] is not None:
+            self.visualize_rivers(
+                chunk_data['river_presence'],
+                chunk_data['river_flow'],
+                chunk_data['elevation'],
+                chunk_data.get('discharge'),
+                f"seed{seed}_rivers.png",
+                dpi
+            )
+        
+        # Combined hydrology visualization
         self.visualize_hydrology(
             chunk_data['river_presence'],
+            chunk_data['river_flow'],
             chunk_data['water_table_depth'],
+            chunk_data['elevation'],
+            chunk_data.get('discharge'),
             f"{prefix}_hydrology.png",
             dpi
         )
@@ -735,6 +914,8 @@ class LayerVisualizer:
             'tectonic_stress': None,
             'bedrock_type': None,
             'river_presence': None,
+            'river_flow': None,
+            'discharge': None,
             'water_table_depth': None,
             'soil_type': None,
             'soil_ph': None,
@@ -769,6 +950,10 @@ class LayerVisualizer:
             data['bedrock_type'] = np.zeros((size, size), dtype=np.uint8)
         if sample_chunk.river_presence is not None:
             data['river_presence'] = np.zeros((size, size), dtype=bool)
+        if hasattr(sample_chunk, 'river_flow') and sample_chunk.river_flow is not None:
+            data['river_flow'] = np.zeros((size, size), dtype=np.float32)
+        if hasattr(sample_chunk, 'discharge') and sample_chunk.discharge is not None:
+            data['discharge'] = np.zeros((size, size), dtype=np.float32)
         if sample_chunk.water_table_depth is not None:
             data['water_table_depth'] = np.zeros((size, size), dtype=np.float32)
         if sample_chunk.soil_type is not None:
