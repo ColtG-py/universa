@@ -626,10 +626,10 @@ class LayerVisualizer:
         elevation: Optional[np.ndarray] = None,
         filename: str = "wind_patterns.png",
         dpi: int = 150,
-        subsample: int = 16
+        subsample: int = 1
     ) -> None:
         """
-        Visualize wind patterns using vector field (quiver plot).
+        Visualize wind patterns using streamlines (shows curved flow patterns).
         
         Args:
             wind_speed: Array of wind speeds in m/s
@@ -637,9 +637,11 @@ class LayerVisualizer:
             elevation: Optional elevation for context
             filename: Output filename
             dpi: Resolution in dots per inch
-            subsample: Show every Nth vector (reduces density)
+            subsample: Downsampling factor for performance (1 = full resolution)
         """
-        fig, ax = plt.subplots(figsize=(14, 10))
+        fig, ax = plt.subplots(figsize=(18, 14))
+        
+        size = wind_speed.shape[0]
         
         # Show elevation as background if available
         if elevation is not None:
@@ -647,45 +649,47 @@ class LayerVisualizer:
             land_mask = elevation > 0
             land_elevation = np.where(land_mask, elevation, np.nan)
             
-            ax.imshow(land_elevation, cmap='terrain', interpolation='bilinear', alpha=0.3)
+            ax.imshow(land_elevation, cmap='terrain', interpolation='bilinear', alpha=0.2, origin='lower')
         
-        # Subsample for cleaner visualization
-        size = wind_speed.shape[0]
-        x_indices = np.arange(0, size, subsample)
-        y_indices = np.arange(0, size, subsample)
-        X, Y = np.meshgrid(x_indices, y_indices)
+        # Optionally subsample for performance
+        if subsample > 1:
+            wind_speed = wind_speed[::subsample, ::subsample]
+            wind_direction = wind_direction[::subsample, ::subsample]
+            size = wind_speed.shape[0]
         
-        # Convert wind direction to components
+        # Create coordinate grid
+        Y, X = np.mgrid[0:size, 0:size]
+        
+        # Convert wind direction to U,V components
         wind_dir_rad = np.deg2rad(wind_direction)
         wind_u = wind_speed * np.cos(wind_dir_rad)
         wind_v = wind_speed * np.sin(wind_dir_rad)
         
-        # Subsample wind vectors
-        U = wind_u[::subsample, ::subsample]
-        V = wind_v[::subsample, ::subsample]
-        
-        # Plot wind vectors
-        speed_subsampled = wind_speed[::subsample, ::subsample]
-        quiver = ax.quiver(
-            X, Y, U, V,
-            speed_subsampled,
+        # Create streamplot with curved flow lines
+        stream = ax.streamplot(
+            X, Y, wind_u, wind_v,
+            color=wind_speed,
             cmap='cool',
-            scale=100,
-            width=0.003,
-            alpha=0.8
+            density=[2.5, 2.0],
+            linewidth=2.0,
+            arrowsize=1.5,
+            arrowstyle='->',
+            minlength=0.1,
+            integration_direction='both'
         )
         
         # Add colorbar
-        cbar = plt.colorbar(quiver, ax=ax, label='Wind Speed (m/s)', shrink=0.8)
+        cbar = plt.colorbar(stream.lines, ax=ax, label='Wind Speed (m/s)', 
+                           shrink=0.75, pad=0.02, aspect=30)
         
-        ax.set_title('Atmospheric Wind Patterns', fontsize=16, fontweight='bold')
+        ax.set_title('Atmospheric Wind Patterns', fontsize=20, fontweight='bold', pad=20)
         ax.set_xlim(0, size)
         ax.set_ylim(0, size)
         ax.set_aspect('equal')
         ax.axis('off')
         
         plt.tight_layout()
-        plt.savefig(self.output_dir / filename, dpi=dpi, bbox_inches='tight')
+        plt.savefig(self.output_dir / filename, dpi=dpi, bbox_inches='tight', facecolor='white')
         plt.close()
         
         print(f"✓ Saved wind pattern visualization to {self.output_dir / filename}")
@@ -697,10 +701,10 @@ class LayerVisualizer:
         elevation: np.ndarray,
         filename: str = "ocean_currents.png",
         dpi: int = 150,
-        subsample: int = 16
+        subsample: int = 1
     ) -> None:
         """
-        Visualize ocean currents using vector field (quiver plot).
+        Visualize ocean currents using streamlines (shows curved gyre patterns).
         
         Args:
             ocean_current_speed: Array of current speeds in m/s
@@ -708,9 +712,9 @@ class LayerVisualizer:
             elevation: Elevation array (for masking land)
             filename: Output filename
             dpi: Resolution in dots per inch
-            subsample: Show every Nth vector (reduces density)
+            subsample: Downsampling factor for performance
         """
-        fig, ax = plt.subplots(figsize=(14, 10))
+        fig, ax = plt.subplots(figsize=(18, 14))
         
         # Create ocean mask
         ocean_mask = elevation < 0
@@ -718,14 +722,19 @@ class LayerVisualizer:
         # Show ocean depth as background
         ocean_depth = np.where(ocean_mask, -elevation, np.nan)
         
-        im = ax.imshow(ocean_depth, cmap='Blues', interpolation='bilinear', alpha=0.4)
-        plt.colorbar(im, ax=ax, label='Ocean Depth (m)', shrink=0.8)
+        im = ax.imshow(ocean_depth, cmap='Blues', interpolation='bilinear', alpha=0.3, origin='lower')
         
-        # Subsample for cleaner visualization
         size = ocean_current_speed.shape[0]
-        x_indices = np.arange(0, size, subsample)
-        y_indices = np.arange(0, size, subsample)
-        X, Y = np.meshgrid(x_indices, y_indices)
+        
+        # Optionally subsample for performance
+        if subsample > 1:
+            ocean_current_speed = ocean_current_speed[::subsample, ::subsample]
+            ocean_current_direction = ocean_current_direction[::subsample, ::subsample]
+            ocean_mask = ocean_mask[::subsample, ::subsample]
+            size = ocean_current_speed.shape[0]
+        
+        # Create coordinate grid
+        Y, X = np.mgrid[0:size, 0:size]
         
         # Convert current direction to components
         current_dir_rad = np.deg2rad(ocean_current_direction)
@@ -733,41 +742,35 @@ class LayerVisualizer:
         current_v = ocean_current_speed * np.sin(current_dir_rad)
         
         # Mask out land areas
-        current_u_masked = np.where(ocean_mask, current_u, 0)
-        current_v_masked = np.where(ocean_mask, current_v, 0)
+        current_u = np.where(ocean_mask, current_u, 0)
+        current_v = np.where(ocean_mask, current_v, 0)
+        current_speed_masked = np.where(ocean_mask, ocean_current_speed, 0)
         
-        # Subsample current vectors
-        U = current_u_masked[::subsample, ::subsample]
-        V = current_v_masked[::subsample, ::subsample]
-        speed_subsampled = ocean_current_speed[::subsample, ::subsample]
-        
-        # Only plot where there's significant current
-        threshold = 0.01
-        significant = speed_subsampled > threshold
-        
-        # Plot ocean current vectors
-        quiver = ax.quiver(
-            X[significant], Y[significant],
-            U[significant], V[significant],
-            speed_subsampled[significant],
+        # Create streamplot for ocean currents
+        stream = ax.streamplot(
+            X, Y, current_u, current_v,
+            color=current_speed_masked,
             cmap='YlOrRd',
-            scale=30,
-            width=0.004,
-            alpha=0.9
+            density=[2.0, 1.8],
+            linewidth=2.0,
+            arrowsize=1.5,
+            arrowstyle='->',
+            minlength=0.1,
+            integration_direction='both'
         )
         
         # Add colorbar for current speed
-        cbar2 = plt.colorbar(quiver, ax=ax, label='Current Speed (m/s)', 
-                            shrink=0.8, pad=0.1)
+        cbar = plt.colorbar(stream.lines, ax=ax, label='Current Speed (m/s)', 
+                           shrink=0.75, pad=0.02, aspect=30)
         
-        ax.set_title('Ocean Surface Currents', fontsize=16, fontweight='bold')
+        ax.set_title('Ocean Surface Currents', fontsize=20, fontweight='bold', pad=20)
         ax.set_xlim(0, size)
         ax.set_ylim(0, size)
         ax.set_aspect('equal')
         ax.axis('off')
         
         plt.tight_layout()
-        plt.savefig(self.output_dir / filename, dpi=dpi, bbox_inches='tight')
+        plt.savefig(self.output_dir / filename, dpi=dpi, bbox_inches='tight', facecolor='white')
         plt.close()
         
         print(f"✓ Saved ocean current visualization to {self.output_dir / filename}")
