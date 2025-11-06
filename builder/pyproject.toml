@@ -4,6 +4,11 @@ version = "0.1.0"
 description = ""
 authors = ["Colt Gainey <Colt.Gainey@gmail.com>"]
 readme = "README.md"
+packages = [
+    {include = "generation"},
+    {include = "models"},
+    {include = "utils"},
+]
 
 [tool.poetry.dependencies]
 python = "^3.11"
@@ -12,7 +17,7 @@ scipy = "^1.16.3"
 noise = "^1.2.2"
 pydantic = "^2.12.3"
 opensimplex = "^0.4.5.1"
-
+numba = "^0.62.1"
 
 [build-system]
 requires = ["poetry-core"]

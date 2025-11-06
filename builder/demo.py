@@ -30,7 +30,7 @@ def demo_small_world_with_viz():
     
     # Configure world generation parameters
     params = WorldGenerationParams(
-        seed=2424,
+        seed=123,
         size=WorldSize.SMALL,  # 512x512 world
         
         # Planetary parameters
@@ -40,7 +40,7 @@ def demo_small_world_with_viz():
         rotation_hours=24.0,
         
         # Tectonic parameters
-        num_plates=60,
+        num_plates=8,
         plate_speed_mm_year=50.0,
         
         # Atmospheric parameters

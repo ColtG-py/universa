@@ -78,8 +78,8 @@ def execute(world_state: WorldState, params: WorldGenerationParams):
     print(f"    - Simulating water particle flow...")
     
     # INCREASED iterations for better channel formation
-    num_iterations = 20  # Increased from 3
-    particles_per_mm = 0.5  # Slightly increased for more samples
+    num_iterations = 5  # Increased from 3
+    particles_per_mm = 0.25  # Slightly increased for more samples
     
     land_mask = elevation_global > 0
     num_land_cells = land_mask.sum()
@@ -302,9 +302,9 @@ def simulate_particle(
     speed_x, speed_y = 0.0, 0.0
     
     # Simulation parameters
-    max_steps = 100  # INCREASED from 300 to let particles flow further
+    max_steps = 30  # INCREASED from 300 to let particles flow further
     gravity = 1.0
-    momentum_transfer = 1  # INCREASED from 0.3 for stronger channel coherence
+    momentum_transfer = 10  # INCREASED from 0.3 for stronger channel coherence
     
     for step in range(max_steps):
         # Current integer position
