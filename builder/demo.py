@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from config import WorldGenerationParams, WorldSize
 from generation.pipeline import create_pipeline
-from utils.visualization import LayerVisualizer
+from utils.visualizers import UnifiedVisualizer
 
 
 def print_section(title):
@@ -131,11 +131,11 @@ def demo_small_world_with_viz():
         print(f"  Maximum: {precipitation.max():.0f}mm/year")
         print(f"  Mean: {precipitation.mean():.0f}mm/year")
     
-    # Generate visualizations
+    # Generate visualizations using the new modular system
     print_section("GENERATING VISUALIZATIONS")
     
-    visualizer = LayerVisualizer(output_dir="world_visualizations")
-    visualizer.visualize_all_layers(world_state, prefix=f"seed{params.seed}", dpi=150)
+    visualizer = UnifiedVisualizer(output_dir="world_visualizations")
+    visualizer.visualize_all(world_state, prefix=f"seed{params.seed}", dpi=150)
     
     # Count geological features
     print_section("GEOLOGICAL FEATURES")
@@ -143,7 +143,6 @@ def demo_small_world_with_viz():
     feature_counts = {}
     for chunk in world_state.chunks.values():
         for feature in chunk.geological_features:
-            print(feature)
             feature_type = feature.type
             feature_counts[feature_type] = feature_counts.get(feature_type, 0) + 1
     
@@ -183,17 +182,15 @@ def demo_multiple_seeds():
         pipeline = create_pipeline(params)
         world_state = pipeline.generate()
         
-        # Generate visualization
-        visualizer = LayerVisualizer(output_dir="world_visualizations")
+        # Generate visualization using topography visualizer
+        visualizer = UnifiedVisualizer(output_dir="world_visualizations")
         
-        # Just visualize elevation for comparison
-        chunk_data = visualizer._collect_chunk_data(world_state)
-        if chunk_data['elevation'] is not None:
-            visualizer.visualize_elevation(
-                chunk_data['elevation'],
-                f"seed{seed}_elevation.png",
-                dpi=100
-            )
+        # Just visualize topography for comparison
+        visualizer.topography.visualize_from_chunks(
+            world_state,
+            f"seed{seed}_elevation.png",
+            dpi=100
+        )
         
         print(f"✓ World {seed} complete")
     
@@ -201,9 +198,58 @@ def demo_multiple_seeds():
     print("Check world_visualizations/ to see the differences")
 
 
-def demo_layer_by_layer():
-    """Generate a world and show each layer progressively"""
-    print_section("LAYER-BY-LAYER GENERATION DEMO")
+def demo_selective_visualization():
+    """Generate a world and selectively visualize specific passes"""
+    print_section("SELECTIVE VISUALIZATION DEMO")
+    
+    params = WorldGenerationParams(
+        seed=999,
+        size=WorldSize.SMALL,
+        num_plates=10,
+        ocean_percentage=0.65,
+    )
+    
+    print("Generating world...")
+    
+    pipeline = create_pipeline(params)
+    world_state = pipeline.generate()
+    
+    # Create visualizer
+    visualizer = UnifiedVisualizer(output_dir="selective_viz")
+    
+    print("\nGenerating selective visualizations...")
+    
+    # Only visualize the most important layers
+    print("  • Topography...")
+    visualizer.topography.visualize_from_chunks(
+        world_state,
+        "topography.png",
+        dpi=150
+    )
+    
+    print("  • Rivers...")
+    visualizer.rivers.visualize_from_chunks(
+        world_state,
+        "rivers.png",
+        dpi=150
+    )
+    
+    print("  • Climate...")
+    visualizer.climate.visualize_from_chunks(
+        world_state,
+        "temperature.png",
+        "precipitation.png",
+        "climate_combined.png",
+        dpi=150
+    )
+    
+    print("\n✓ Selective visualization complete!")
+    print("Check selective_viz/ directory")
+
+
+def demo_summary_visualization():
+    """Generate a world and create summary visualization only"""
+    print_section("SUMMARY VISUALIZATION DEMO")
     
     params = WorldGenerationParams(
         seed=424242,
@@ -212,79 +258,56 @@ def demo_layer_by_layer():
         ocean_percentage=0.65,
     )
     
-    print("Generating world with detailed layer visualization...")
+    print("Generating world...")
+    
+    pipeline = create_pipeline(params)
+    world_state = pipeline.generate()
+    
+    # Create visualizer and generate summary
+    visualizer = UnifiedVisualizer(output_dir="summary_viz")
+    visualizer.visualize_summary(world_state, prefix="summary", dpi=150)
+    
+    print("\n✓ Summary visualization complete!")
+    print("Check summary_viz/ directory")
+
+
+def demo_single_pass_visualization():
+    """Demonstrate visualizing a single pass"""
+    print_section("SINGLE PASS VISUALIZATION DEMO")
+    
+    params = WorldGenerationParams(
+        seed=777,
+        size=WorldSize.SMALL,
+        num_plates=8,
+        ocean_percentage=0.7,
+    )
+    
+    print("Generating world...")
     
     pipeline = create_pipeline(params)
     world_state = pipeline.generate()
     
     # Create visualizer
-    visualizer = LayerVisualizer(output_dir="layer_progression")
+    visualizer = UnifiedVisualizer(output_dir="single_pass_viz")
     
-    # Collect all data
-    chunk_data = visualizer._collect_chunk_data(world_state)
+    # Visualize only Pass 10 (Rivers)
+    print("\nVisualizing only Pass 10 (Rivers)...")
+    visualizer.visualize_pass(world_state, pass_number=10, prefix="pass10", dpi=150)
     
-    # Visualize each layer individually
-    print("\nGenerating individual layer visualizations...")
-    
-    layer_map = [
-        ('elevation', 'Elevation', 'terrain'),
-        ('plate_id', 'Tectonic Plates', 'tab20'),
-        ('tectonic_stress', 'Tectonic Stress', 'YlOrRd'),
-        ('temperature_c', 'Temperature', 'RdYlBu_r'),
-        ('precipitation_mm', 'Precipitation', 'Blues'),
-        ('bedrock_type', 'Bedrock Type', 'Set3'),
-        ('river_presence', 'Rivers', 'Blues'),
-        ('water_table_depth', 'Water Table', 'Blues_r'),
-        ('soil_type', 'Soil Type', 'YlOrBr'),
-        ('soil_ph', 'Soil pH', 'RdYlGn'),
-    ]
-    
-    for layer_name, display_name, cmap in layer_map:
-        if chunk_data[layer_name] is not None:
-            visualizer.export_to_pil(
-                chunk_data[layer_name],
-                cmap,
-                f"{layer_name}.png"
-            )
-            print(f"  ✓ {display_name}")
-    
-    print("\n✓ Layer-by-layer visualization complete!")
-    print("Check layer_progression/ directory")
+    print("\n✓ Single pass visualization complete!")
+    print("Check single_pass_viz/ directory")
 
 
 def main():
     """Main demo function"""
     try:
         print("\n" + "🌍 "*20)
-        print("WORLD BUILDER - GENERATION & VISUALIZATION DEMO")
+        print("WORLD BUILDER - MODULAR VISUALIZATION SYSTEM DEMO")
         print("🌍 "*20 + "\n")
         
         # Demo 1: Full world with all visualizations
-        print("\n📍 DEMO 1: Complete World Generation with Visualization")
+        print("\n📍 DEMO 1: Complete World Generation with All Visualizations")
         world_state = demo_small_world_with_viz()
-        
-        # # Demo 2: Multiple seeds for comparison
-        # print("\n📍 DEMO 2: Multi-Seed Comparison")
-        # demo_multiple_seeds()
-        
-        # # Demo 3: Layer-by-layer visualization
-        # print("\n📍 DEMO 3: Layer-by-Layer Visualization")
-        # demo_layer_by_layer()
-        
-        print_section("ALL DEMOS COMPLETE")
-        print("\nThe World Builder generation engine is ready for use!")
-        print("\nKey Features:")
-        print("  ✓ Modular generation pipeline with 14 passes")
-        print("  ✓ Fully configurable parameters")
-        print("  ✓ Chunk-based architecture for scalability")
-        print("  ✓ Deterministic generation (same seed = same world)")
-        print("  ✓ Scientific accuracy in climate, geology, and hydrology")
-        print("  ✓ Comprehensive layer visualization")
-        
-        print("\nVisualization Directories:")
-        print("  • world_visualizations/ - Full world renders")
-        print("  • layer_progression/ - Individual layer exports")
-        
         return 0
         
     except Exception as e:
