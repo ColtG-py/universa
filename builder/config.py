@@ -67,22 +67,26 @@ class Mineral(IntEnum):
 
 
 class SoilType(IntEnum):
-    """Soil classification types"""
     SAND = 0
-    SILT = 1
-    CLAY = 2
-    LOAM = 3
-    PEAT = 4
+    SANDY_LOAM = 1
+    LOAM = 2
+    SILT_LOAM = 3
+    CLAY_LOAM = 4
+    SANDY_CLAY_LOAM = 5
+    SILTY_CLAY_LOAM = 6
+    CLAY = 7
+    SILTY_CLAY = 8
+    SANDY_CLAY = 9
 
 
 class DrainageClass(IntEnum):
-    """Soil drainage capability"""
-    VERY_POORLY = 0
-    POORLY_DRAINED = 1
-    SOMEWHAT_POORLY = 2
-    MODERATELY_WELL = 3
-    WELL_DRAINED = 4
-    EXCESSIVELY = 5
+    EXCESSIVELY = 0                  # Water removed very rapidly
+    SOMEWHAT_EXCESSIVELY = 1         # Water removed rapidly
+    WELL = 2                         # Water removed readily but not rapidly
+    MODERATELY_WELL = 3              # Water removed somewhat slowly
+    SOMEWHAT_POORLY = 4              # Water removed slowly
+    POORLY = 5                       # Water removed very slowly
+    VERY_POORLY = 6                  # Free water at/near surface
 
 
 class FeatureType(str, Enum):
