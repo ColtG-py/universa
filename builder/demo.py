@@ -30,7 +30,7 @@ def demo_small_world_with_viz():
     
     # Configure world generation parameters
     params = WorldGenerationParams(
-        seed=123,
+        seed=100,
         size=WorldSize.SMALL,  # 512x512 world
         
         # Planetary parameters
@@ -40,7 +40,7 @@ def demo_small_world_with_viz():
         rotation_hours=24.0,
         
         # Tectonic parameters
-        num_plates=8,
+        num_plates=30,
         plate_speed_mm_year=50.0,
         
         # Atmospheric parameters
@@ -51,7 +51,7 @@ def demo_small_world_with_viz():
         ocean_percentage=0.7,
         
         # Noise parameters
-        custom_noise_octaves=6,
+        custom_noise_octaves=7,
         custom_noise_persistence=0.5,
         custom_noise_lacunarity=2.0,
         
@@ -160,143 +160,6 @@ def demo_small_world_with_viz():
     print(f"\nVisualizations saved to: world_visualizations/")
     
     return world_state
-
-
-def demo_multiple_seeds():
-    """Generate multiple worlds with different seeds for comparison"""
-    print_section("MULTI-SEED COMPARISON")
-    
-    seeds = [42, 123, 999]
-    
-    for seed in seeds:
-        print(f"\nGenerating world with seed {seed}...")
-        
-        params = WorldGenerationParams(
-            seed=seed,
-            size=WorldSize.SMALL,
-            num_plates=8,
-            ocean_percentage=0.7,
-            erosion_iterations=2,
-        )
-        
-        pipeline = create_pipeline(params)
-        world_state = pipeline.generate()
-        
-        # Generate visualization using topography visualizer
-        visualizer = UnifiedVisualizer(output_dir="world_visualizations")
-        
-        # Just visualize topography for comparison
-        visualizer.topography.visualize_from_chunks(
-            world_state,
-            f"seed{seed}_elevation.png",
-            dpi=100
-        )
-        
-        print(f"✓ World {seed} complete")
-    
-    print("\n✓ All seed comparisons complete!")
-    print("Check world_visualizations/ to see the differences")
-
-
-def demo_selective_visualization():
-    """Generate a world and selectively visualize specific passes"""
-    print_section("SELECTIVE VISUALIZATION DEMO")
-    
-    params = WorldGenerationParams(
-        seed=999,
-        size=WorldSize.SMALL,
-        num_plates=10,
-        ocean_percentage=0.65,
-    )
-    
-    print("Generating world...")
-    
-    pipeline = create_pipeline(params)
-    world_state = pipeline.generate()
-    
-    # Create visualizer
-    visualizer = UnifiedVisualizer(output_dir="selective_viz")
-    
-    print("\nGenerating selective visualizations...")
-    
-    # Only visualize the most important layers
-    print("  • Topography...")
-    visualizer.topography.visualize_from_chunks(
-        world_state,
-        "topography.png",
-        dpi=150
-    )
-    
-    print("  • Rivers...")
-    visualizer.rivers.visualize_from_chunks(
-        world_state,
-        "rivers.png",
-        dpi=150
-    )
-    
-    print("  • Climate...")
-    visualizer.climate.visualize_from_chunks(
-        world_state,
-        "temperature.png",
-        "precipitation.png",
-        "climate_combined.png",
-        dpi=150
-    )
-    
-    print("\n✓ Selective visualization complete!")
-    print("Check selective_viz/ directory")
-
-
-def demo_summary_visualization():
-    """Generate a world and create summary visualization only"""
-    print_section("SUMMARY VISUALIZATION DEMO")
-    
-    params = WorldGenerationParams(
-        seed=424242,
-        size=WorldSize.SMALL,
-        num_plates=10,
-        ocean_percentage=0.65,
-    )
-    
-    print("Generating world...")
-    
-    pipeline = create_pipeline(params)
-    world_state = pipeline.generate()
-    
-    # Create visualizer and generate summary
-    visualizer = UnifiedVisualizer(output_dir="summary_viz")
-    visualizer.visualize_summary(world_state, prefix="summary", dpi=150)
-    
-    print("\n✓ Summary visualization complete!")
-    print("Check summary_viz/ directory")
-
-
-def demo_single_pass_visualization():
-    """Demonstrate visualizing a single pass"""
-    print_section("SINGLE PASS VISUALIZATION DEMO")
-    
-    params = WorldGenerationParams(
-        seed=777,
-        size=WorldSize.SMALL,
-        num_plates=8,
-        ocean_percentage=0.7,
-    )
-    
-    print("Generating world...")
-    
-    pipeline = create_pipeline(params)
-    world_state = pipeline.generate()
-    
-    # Create visualizer
-    visualizer = UnifiedVisualizer(output_dir="single_pass_viz")
-    
-    # Visualize only Pass 10 (Rivers)
-    print("\nVisualizing only Pass 10 (Rivers)...")
-    visualizer.visualize_pass(world_state, pass_number=10, prefix="pass10", dpi=150)
-    
-    print("\n✓ Single pass visualization complete!")
-    print("Check single_pass_viz/ directory")
-
 
 def main():
     """Main demo function"""

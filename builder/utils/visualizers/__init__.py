@@ -15,7 +15,7 @@ from .pass_08_erosion_viz import Pass08ErosionVisualizer
 from .pass_09_groundwater_viz import Pass09GroundwaterVisualizer
 from .pass_10_rivers_viz import Pass10RiversVisualizer
 from .pass_11_soil_viz import Pass11SoilVisualizer
-from .pass_12_microclimate_viz import Pass12MicroclimateVisualizer
+from .pass_12_biomes_viz import Pass12BiomesVisualizer
 from .unified_visualizer import UnifiedVisualizer, create_visualization_summary
 
 __all__ = [
@@ -31,7 +31,7 @@ __all__ = [
     'Pass09GroundwaterVisualizer',
     'Pass10RiversVisualizer',
     'Pass11SoilVisualizer',
-    'Pass12MicroclimateVisualizer',
+    'Pass12BiomesVisualizer',
     'UnifiedVisualizer',
     'create_visualization_summary',
 ]

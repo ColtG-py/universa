@@ -1,6 +1,8 @@
 """
 World Builder - Configuration and Constants
 Contains all global settings, constants, and configuration for world generation
+
+UPDATED: Added BiomeType enum for Pass 12
 """
 
 from enum import IntEnum, Enum
@@ -89,6 +91,23 @@ class DrainageClass(IntEnum):
     VERY_POORLY = 6                  # Free water at/near surface
 
 
+class BiomeType(IntEnum):
+    """Biome classifications based on Whittaker diagram"""
+    OCEAN = 0
+    ICE = 1
+    TUNDRA = 2
+    COLD_DESERT = 3
+    BOREAL_FOREST = 4
+    TEMPERATE_RAINFOREST = 5
+    TEMPERATE_DECIDUOUS_FOREST = 6
+    TEMPERATE_GRASSLAND = 7
+    MEDITERRANEAN = 8
+    HOT_DESERT = 9
+    SAVANNA = 10
+    TROPICAL_SEASONAL_FOREST = 11
+    TROPICAL_RAINFOREST = 12
+
+
 class FeatureType(str, Enum):
     """Geological features"""
     CAVE_SYSTEM = "cave_system"
@@ -165,7 +184,7 @@ GENERATION_PASSES = [
     "pass_09_groundwater",
     "pass_10_rivers",
     "pass_11_soil",
-    "pass_12_microclimate",
+    "pass_12_biomes",  # ADDED
     "pass_13_features",
     "pass_14_polish",
 ]
@@ -183,7 +202,7 @@ PASS_WEIGHTS = {
     "pass_09_groundwater": 7,
     "pass_10_rivers": 10,
     "pass_11_soil": 8,
-    "pass_12_microclimate": 5,
+    "pass_12_biomes": 7,  # ADDED
     "pass_13_features": 6,
     "pass_14_polish": 2,
 }

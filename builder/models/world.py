@@ -152,9 +152,11 @@ class WorldChunk:
         self.soil_ph: Optional[np.ndarray] = None  # float32[256, 256]
         self.soil_drainage: Optional[np.ndarray] = None  # uint8[256, 256] - DrainageClass enum
         
-        # Pass 12-14: Details
-        self.microclimate_modifier: Optional[np.ndarray] = None  # float32[256, 256]
-        self.cave_presence: Optional[np.ndarray] = None  # bool[256, 256]
+        # Pass 12: Biomes & Vegetation
+        self.biome_type: Optional[np.ndarray] = None  # uint8[256, 256] - BiomeType enum
+        self.vegetation_density: Optional[np.ndarray] = None  # float32[256, 256] - 0-1 scale
+        self.forest_canopy_height: Optional[np.ndarray] = None  # float32[256, 256] - meters
+        self.agricultural_suitability: Optional[np.ndarray] = None  # float32[256, 256] - 0-1 scale
         
         # Geological features (discrete points)
         self.geological_features: List[GeologicalFeature] = []
@@ -196,6 +198,7 @@ class WorldChunk:
             "temperature_c", "precipitation_mm", "wind_direction", "wind_speed",
             "water_table_depth", "river_presence", "river_flow", "drainage_basin_id",
             "soil_type", "soil_ph", "soil_drainage",
+            "biome_type", "vegetation_density", "forest_canopy_height", "agricultural_suitability",
             "microclimate_modifier", "cave_presence"
         ]
         
@@ -245,6 +248,10 @@ class WorldChunk:
             "soil_type": np.uint8,
             "soil_ph": np.float32,
             "soil_drainage": np.uint8,
+            "biome_type": np.uint8,
+            "vegetation_density": np.float32,
+            "forest_canopy_height": np.float32,
+            "agricultural_suitability": np.float32,
             "microclimate_modifier": np.float32,
             "cave_presence": bool,
         }

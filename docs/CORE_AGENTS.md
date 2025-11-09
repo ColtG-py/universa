@@ -69,7 +69,7 @@ class CoreStats(BaseModel):
         
         Formula: (stat_value - 10) * 0.02
         - 10 is baseline (0% modifier)
-        - Each point above/below 10 = ±2% success chance
+        - Each point above/below 10 = Â±2% success chance
         - Range: -18% (stat=1) to +20% (stat=20)
         """
         stat_value = getattr(self, stat_name.lower(), 10)
@@ -264,10 +264,10 @@ class Alignment(BaseModel):
         Shift alignment based on actions
         
         Examples:
-        - Helping stranger → shift toward Good
-        - Stealing → shift toward Chaotic
-        - Following law even when costly → shift toward Lawful
-        - Harming innocent → shift toward Evil
+        - Helping stranger â†’ shift toward Good
+        - Stealing â†’ shift toward Chaotic
+        - Following law even when costly â†’ shift toward Lawful
+        - Harming innocent â†’ shift toward Evil
         """
         shifts = {
             "help_stranger": (magnitude, 0),
@@ -346,7 +346,7 @@ class Alignment(BaseModel):
         
         context_multiplier = 1.0
         if threatened:
-            context_multiplier = 4.0  # High threat → more likely to harm
+            context_multiplier = 4.0  # High threat â†’ more likely to harm
         elif provoked:
             context_multiplier = 2.0
         elif desperate:
@@ -370,10 +370,10 @@ class Alignment(BaseModel):
         base_cooperation = 0.5
         
         # Alignment modifiers
-        alignment_modifier = self.good_evil_score * 0.3  # ±30%
+        alignment_modifier = self.good_evil_score * 0.3  # Â±30%
         
         # Relationship modifier
-        relationship_modifier = relationship_strength * 0.4  # up to ±40%
+        relationship_modifier = relationship_strength * 0.4  # up to Â±40%
         
         cooperation_chance = base_cooperation + alignment_modifier + relationship_modifier
         
@@ -758,14 +758,14 @@ class AgentGenome(BaseModel):
         default_factory=lambda: TraitGenome(
             trait_name="height",
             base_value=170.0,  # cm
-            marker_weight=1.0   # Each marker = ±1 cm
+            marker_weight=1.0   # Each marker = Â±1 cm
         )
     )
     weight_genes: TraitGenome = Field(
         default_factory=lambda: TraitGenome(
             trait_name="weight",
             base_value=70.0,  # kg
-            marker_weight=0.5  # Each marker = ±0.5 kg
+            marker_weight=0.5  # Each marker = Â±0.5 kg
         )
     )
     
@@ -1032,13 +1032,13 @@ class PhysicalAttributes(BaseModel):
         """Physical strength modifier based on body composition"""
         # More muscle = more strength
         muscle_factor = (self.muscle_mass_percent - 25) / 30  # Normalized
-        return 1.0 + muscle_factor * 0.3  # Up to ±30%
+        return 1.0 + muscle_factor * 0.3  # Up to Â±30%
     
     def get_dexterity_modifier(self) -> float:
         """Dexterity modifier based on body composition"""
         # Lower body fat = more dexterous
         fat_factor = (35 - self.body_fat_percent) / 30
-        return 1.0 + fat_factor * 0.2  # Up to ±20%
+        return 1.0 + fat_factor * 0.2  # Up to Â±20%
 
 class BodyHealth(BaseModel):
     """
@@ -1477,7 +1477,6 @@ class Genome(BaseModel):
 - **structlog** - Structured logging
 
 ---
-
 ## Architecture Diagram
 
 ```

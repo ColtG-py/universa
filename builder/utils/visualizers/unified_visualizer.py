@@ -17,7 +17,7 @@ from .pass_08_erosion_viz import Pass08ErosionVisualizer
 from .pass_09_groundwater_viz import Pass09GroundwaterVisualizer
 from .pass_10_rivers_viz import Pass10RiversVisualizer
 from .pass_11_soil_viz import Pass11SoilVisualizer
-from .pass_12_microclimate_viz import Pass12MicroclimateVisualizer
+from .pass_12_biomes_viz import Pass12BiomesVisualizer
 
 
 class UnifiedVisualizer:
@@ -57,7 +57,7 @@ class UnifiedVisualizer:
         self.groundwater = Pass09GroundwaterVisualizer(output_dir)
         self.rivers = Pass10RiversVisualizer(output_dir)
         self.soil = Pass11SoilVisualizer(output_dir)
-        self.microclimate = Pass12MicroclimateVisualizer(output_dir)
+        self.biomes = Pass12BiomesVisualizer(output_dir)
     
     def visualize_all(
         self,
@@ -190,6 +190,21 @@ class UnifiedVisualizer:
             )
         except Exception as e:
             print(f"  ⚠ Error visualizing soil: {e}")
+
+        # Pass 12: Biomes
+        print("Visualizing Pass 12: Biomes...")
+        try:
+            self.biomes.visualize_from_chunks(
+                world_state,
+                f"{prefix}_pass_12_biomes.png",
+                f"{prefix}_pass_12_vegetation.png",
+                f"{prefix}_pass_12_canopy.png",
+                f"{prefix}_pass_12_agriculture.png",
+                f"{prefix}_pass_12_biomes_combined.png",
+                dpi
+            )
+        except Exception as e:
+            print(f"  ⚠ Error visualizing biomes: {e}")
         
         # Pass 12: Microclimate (TODO - placeholder)
         # Currently not implemented
@@ -226,7 +241,7 @@ class UnifiedVisualizer:
             9: (self.groundwater, "Groundwater"),
             10: (self.rivers, "Rivers"),
             11: (self.soil, "Soil"),
-            12: (self.microclimate, "Microclimate"),
+            12: (self.biomes, "Biomes"),
         }
         
         if pass_number not in visualizer_map:
