@@ -115,7 +115,23 @@ class BiomeType(IntEnum):
     TROPICAL_RAINFOREST = 21         # Tropical rainforest
     ALPINE = 22                      # High elevation, above treeline
     MANGROVE = 23                    # Coastal tropical wetlands
-
+    
+class FaunaCategory(IntEnum):
+    """Wildlife categories for fauna distribution"""
+    HERBIVORE_GRAZER = 0      # Grassland grazers (deer, antelope, cattle)
+    HERBIVORE_BROWSER = 1     # Forest browsers (moose, elk, rabbits)
+    HERBIVORE_MIXED = 2        # Mixed feeders (bears, boars)
+    PREDATOR_SMALL = 3         # Small predators (foxes, wildcats, weasels)
+    PREDATOR_MEDIUM = 4        # Medium predators (wolves, lynx, coyotes)
+    PREDATOR_APEX = 5          # Apex predators (bears, big cats, eagles)
+    OMNIVORE = 6               # Omnivorous species (boars, raccoons)
+    AQUATIC_FISH = 7           # Fish populations
+    AQUATIC_AMPHIBIAN = 8      # Frogs, salamanders
+    AQUATIC_WATERFOWL = 9      # Ducks, geese, herons
+    AVIAN_RAPTOR = 10          # Birds of prey
+    AVIAN_SONGBIRD = 11        # Small perching birds
+    AVIAN_MIGRATORY = 12       # Long-distance migrants
+    INSECT = 13                # Pollinators and decomposers (abstracted)
 
 class FeatureType(str, Enum):
     """Geological features"""
@@ -194,7 +210,7 @@ GENERATION_PASSES = [
     "pass_10_rivers",
     "pass_11_soil",
     "pass_12_biomes",
-    "pass_13_features",
+    "pass_13_fauna",
     "pass_14_polish",
 ]
 
@@ -212,7 +228,7 @@ PASS_WEIGHTS = {
     "pass_10_rivers": 10,
     "pass_11_soil": 8,
     "pass_12_biomes": 7,
-    "pass_13_features": 6,
+    "pass_13_fauna": 6,
     "pass_14_polish": 2,
 }
 

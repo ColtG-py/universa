@@ -157,6 +157,10 @@ class WorldChunk:
         self.vegetation_density: Optional[np.ndarray] = None  # float32[256, 256] - 0-1 scale
         self.forest_canopy_height: Optional[np.ndarray] = None  # float32[256, 256] - meters
         self.agricultural_suitability: Optional[np.ndarray] = None  # float32[256, 256] - 0-1 scale
+
+        self.fauna_density: Optional[Dict[FaunaCategory, np.ndarray]] = None  # Dict of float32[256, 256] per category
+        self.apex_predator_territories: Optional[np.ndarray] = None  # uint32[256, 256] - territory IDs
+        self.migration_routes: Optional[np.ndarray] = None  # bool[256, 256] - seasonal migration corridors
         
         # Geological features (discrete points)
         self.geological_features: List[GeologicalFeature] = []
@@ -214,6 +218,20 @@ class WorldChunk:
                 for mineral, arr in self.mineral_richness.items()
             }
         
+        # Serialize fauna density dictionary
+        if self.fauna_density is not None:
+            data["fauna_density"] = {
+                int(fauna_cat): arr.tolist()
+                for fauna_cat, arr in self.fauna_density.items()
+            }
+        
+        # Serialize other fauna arrays
+        if self.apex_predator_territories is not None:
+            data["apex_predator_territories"] = self.apex_predator_territories.tolist()
+        
+        if self.migration_routes is not None:
+            data["migration_routes"] = self.migration_routes.tolist()
+        
         # Serialize geological features
         data["geological_features"] = [
             feature.dict() for feature in self.geological_features
@@ -266,6 +284,19 @@ class WorldChunk:
                 Mineral(int(k)): np.array(v, dtype=np.float32)
                 for k, v in data["mineral_richness"].items()
             }
+        
+        if "fauna_density" in data and data["fauna_density"] is not None:
+            chunk.fauna_density = {
+                FaunaCategory(int(k)): np.array(v, dtype=np.float32)
+                for k, v in data["fauna_density"].items()
+            }
+        
+        # Deserialize other fauna arrays
+        if "apex_predator_territories" in data and data["apex_predator_territories"] is not None:
+            chunk.apex_predator_territories = np.array(data["apex_predator_territories"], dtype=np.uint32)
+        
+        if "migration_routes" in data and data["migration_routes"] is not None:
+            chunk.migration_routes = np.array(data["migration_routes"], dtype=bool)
         
         # Deserialize geological features
         if "geological_features" in data:

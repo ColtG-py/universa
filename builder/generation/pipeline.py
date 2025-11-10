@@ -230,6 +230,7 @@ def create_pipeline(params: WorldGenerationParams) -> GenerationPipeline:
     from generation import pass_10_rivers
     from generation import pass_11_soil
     from generation import pass_12_biomes
+    from generation import pass_13_fauna
 
     pipeline.register_pass("pass_01_planetary", pass_01_planetary)
     pipeline.register_pass("pass_02_tectonics", pass_02_tectonics)
@@ -243,5 +244,6 @@ def create_pipeline(params: WorldGenerationParams) -> GenerationPipeline:
     pipeline.register_pass("pass_10_rivers", pass_10_rivers)
     pipeline.register_pass("pass_11_soil", pass_11_soil)
     pipeline.register_pass("pass_12_biomes", pass_12_biomes)
+    pipeline.register_pass("pass_13_fauna", pass_13_fauna)
     
     return pipeline

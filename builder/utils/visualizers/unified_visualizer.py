@@ -1,5 +1,5 @@
 """
-World Builder - Unified Visualizer
+World Builder - Unified Visualizer (UPDATED with Pass 13 Fauna)
 Coordinates all pass-specific visualizers for complete world visualization
 """
 
@@ -18,6 +18,7 @@ from .pass_09_groundwater_viz import Pass09GroundwaterVisualizer
 from .pass_10_rivers_viz import Pass10RiversVisualizer
 from .pass_11_soil_viz import Pass11SoilVisualizer
 from .pass_12_biomes_viz import Pass12BiomesVisualizer
+from .pass_13_fauna_viz import Pass13FaunaVisualizer
 
 
 class UnifiedVisualizer:
@@ -58,6 +59,7 @@ class UnifiedVisualizer:
         self.rivers = Pass10RiversVisualizer(output_dir)
         self.soil = Pass11SoilVisualizer(output_dir)
         self.biomes = Pass12BiomesVisualizer(output_dir)
+        self.fauna = Pass13FaunaVisualizer(output_dir)
     
     def visualize_all(
         self,
@@ -206,7 +208,21 @@ class UnifiedVisualizer:
         except Exception as e:
             print(f"  ⚠ Error visualizing biomes: {e}")
         
-        # Pass 12: Microclimate (TODO - placeholder)
+        # Pass 13: Fauna (NEW)
+        print("Visualizing Pass 13: Fauna...")
+        try:
+            self.fauna.visualize_from_chunks(
+                world_state,
+                f"{prefix}_pass_13_fauna_density.png",
+                f"{prefix}_pass_13_territories.png",
+                f"{prefix}_pass_13_migration.png",
+                f"{prefix}_pass_13_fauna_combined.png",
+                dpi
+            )
+        except Exception as e:
+            print(f"  ⚠ Error visualizing fauna: {e}")
+        
+        # Pass 14: Polish (TODO - placeholder)
         # Currently not implemented
         
         print("\n" + "="*70)
@@ -242,6 +258,7 @@ class UnifiedVisualizer:
             10: (self.rivers, "Rivers"),
             11: (self.soil, "Soil"),
             12: (self.biomes, "Biomes"),
+            13: (self.fauna, "Fauna"),
         }
         
         if pass_number not in visualizer_map:
@@ -275,7 +292,8 @@ class UnifiedVisualizer:
         - Topography
         - Climate (combined)
         - Rivers
-        - Tectonics
+        - Biomes
+        - Fauna
         
         Args:
             world_state: WorldState object
@@ -320,10 +338,27 @@ class UnifiedVisualizer:
             print(f"  ⚠ Error: {e}")
         
         try:
-            print("• Tectonics...")
-            self.tectonics.visualize_from_chunks(
+            print("• Biomes...")
+            self.biomes.visualize_from_chunks(
                 world_state,
-                f"{prefix}_summary_tectonics.png",
+                f"{prefix}_summary_biomes.png",
+                f"{prefix}_summary_vegetation.png",
+                f"{prefix}_summary_canopy.png",
+                f"{prefix}_summary_agriculture.png",
+                f"{prefix}_summary_biomes_combined.png",
+                dpi
+            )
+        except Exception as e:
+            print(f"  ⚠ Error: {e}")
+        
+        try:
+            print("• Fauna...")
+            self.fauna.visualize_from_chunks(
+                world_state,
+                f"{prefix}_summary_fauna_density.png",
+                f"{prefix}_summary_territories.png",
+                f"{prefix}_summary_migration.png",
+                f"{prefix}_summary_fauna_combined.png",
                 dpi
             )
         except Exception as e:
