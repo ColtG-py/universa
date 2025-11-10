@@ -1,6 +1,8 @@
 """
-World Builder - World Data Models
+World Builder - World Data Models (UPDATED FOR PASS 14)
 Data structures for representing world state and chunks
+
+UPDATED: Added resource attributes for Pass 14 (Natural Resources)
 """
 
 from datetime import datetime
@@ -17,6 +19,9 @@ from config import (
     SoilType,
     DrainageClass,
     Mineral,
+    FaunaCategory,
+    TimberType,
+    QuarryType,
     CHUNK_SIZE
 )
 
@@ -158,9 +163,21 @@ class WorldChunk:
         self.forest_canopy_height: Optional[np.ndarray] = None  # float32[256, 256] - meters
         self.agricultural_suitability: Optional[np.ndarray] = None  # float32[256, 256] - 0-1 scale
 
+        # Pass 13: Fauna
         self.fauna_density: Optional[Dict[FaunaCategory, np.ndarray]] = None  # Dict of float32[256, 256] per category
         self.apex_predator_territories: Optional[np.ndarray] = None  # uint32[256, 256] - territory IDs
         self.migration_routes: Optional[np.ndarray] = None  # bool[256, 256] - seasonal migration corridors
+        
+        # Pass 14: Natural Resources
+        self.mineral_deposits: Optional[Dict[Mineral, np.ndarray]] = None  # Dict of float32[256, 256] - concentrated veins
+        self.quarry_quality: Optional[np.ndarray] = None  # float32[256, 256] - 0-1 scale
+        self.quarry_type: Optional[np.ndarray] = None  # uint8[256, 256] - QuarryType enum
+        self.timber_quality: Optional[np.ndarray] = None  # float32[256, 256] - 0-1 scale
+        self.timber_type: Optional[np.ndarray] = None  # uint8[256, 256] - TimberType enum
+        self.agricultural_yield: Optional[np.ndarray] = None  # float32[256, 256] - 0-1 scale (tons/hectare)
+        self.fishing_quality: Optional[np.ndarray] = None  # float32[256, 256] - 0-1 scale
+        self.rare_resources: Optional[np.ndarray] = None  # float32[256, 256] - 0-1 scale (gemstones, magical)
+        self.resource_accessibility: Optional[np.ndarray] = None  # float32[256, 256] - 0-1 scale (extraction difficulty)
         
         # Geological features (discrete points)
         self.geological_features: List[GeologicalFeature] = []
@@ -203,7 +220,9 @@ class WorldChunk:
             "water_table_depth", "river_presence", "river_flow", "drainage_basin_id",
             "soil_type", "soil_ph", "soil_drainage",
             "biome_type", "vegetation_density", "forest_canopy_height", "agricultural_suitability",
-            "microclimate_modifier", "cave_presence"
+            "apex_predator_territories", "migration_routes",
+            "quarry_quality", "quarry_type", "timber_quality", "timber_type",
+            "agricultural_yield", "fishing_quality", "rare_resources", "resource_accessibility",
         ]
         
         for field in array_fields:
@@ -218,19 +237,19 @@ class WorldChunk:
                 for mineral, arr in self.mineral_richness.items()
             }
         
+        # Serialize mineral deposits dictionary
+        if self.mineral_deposits is not None:
+            data["mineral_deposits"] = {
+                int(mineral): arr.tolist()
+                for mineral, arr in self.mineral_deposits.items()
+            }
+        
         # Serialize fauna density dictionary
         if self.fauna_density is not None:
             data["fauna_density"] = {
                 int(fauna_cat): arr.tolist()
                 for fauna_cat, arr in self.fauna_density.items()
             }
-        
-        # Serialize other fauna arrays
-        if self.apex_predator_territories is not None:
-            data["apex_predator_territories"] = self.apex_predator_territories.tolist()
-        
-        if self.migration_routes is not None:
-            data["migration_routes"] = self.migration_routes.tolist()
         
         # Serialize geological features
         data["geological_features"] = [
@@ -270,8 +289,16 @@ class WorldChunk:
             "vegetation_density": np.float32,
             "forest_canopy_height": np.float32,
             "agricultural_suitability": np.float32,
-            "microclimate_modifier": np.float32,
-            "cave_presence": bool,
+            "apex_predator_territories": np.uint32,
+            "migration_routes": bool,
+            "quarry_quality": np.float32,
+            "quarry_type": np.uint8,
+            "timber_quality": np.float32,
+            "timber_type": np.uint8,
+            "agricultural_yield": np.float32,
+            "fishing_quality": np.float32,
+            "rare_resources": np.float32,
+            "resource_accessibility": np.float32,
         }
         
         for field, dtype in array_fields.items():
@@ -285,18 +312,19 @@ class WorldChunk:
                 for k, v in data["mineral_richness"].items()
             }
         
+        # Deserialize mineral deposits
+        if "mineral_deposits" in data and data["mineral_deposits"] is not None:
+            chunk.mineral_deposits = {
+                Mineral(int(k)): np.array(v, dtype=np.float32)
+                for k, v in data["mineral_deposits"].items()
+            }
+        
+        # Deserialize fauna density
         if "fauna_density" in data and data["fauna_density"] is not None:
             chunk.fauna_density = {
                 FaunaCategory(int(k)): np.array(v, dtype=np.float32)
                 for k, v in data["fauna_density"].items()
             }
-        
-        # Deserialize other fauna arrays
-        if "apex_predator_territories" in data and data["apex_predator_territories"] is not None:
-            chunk.apex_predator_territories = np.array(data["apex_predator_territories"], dtype=np.uint32)
-        
-        if "migration_routes" in data and data["migration_routes"] is not None:
-            chunk.migration_routes = np.array(data["migration_routes"], dtype=bool)
         
         # Deserialize geological features
         if "geological_features" in data:

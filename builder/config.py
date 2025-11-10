@@ -133,6 +133,22 @@ class FaunaCategory(IntEnum):
     AVIAN_MIGRATORY = 12       # Long-distance migrants
     INSECT = 13                # Pollinators and decomposers (abstracted)
 
+class TimberType(IntEnum):
+    """Types of harvestable timber"""
+    NONE = 0                   # No commercial timber
+    SOFTWOOD = 1               # Pine, spruce, fir (construction lumber)
+    HARDWOOD = 2               # Oak, maple, walnut (furniture, tools)
+    TROPICAL_HARDWOOD = 3      # Mahogany, teak (high-value exotic wood)
+
+
+class QuarryType(IntEnum):
+    """Types of quarriable building stone"""
+    NONE = 0
+    SANDSTONE = 1              # Sedimentary, moderate quality
+    LIMESTONE = 2              # Good general building stone
+    GRANITE = 3                # Igneous, excellent durability
+    MARBLE = 4                 # Metamorphic, decorative high-value stone
+
 class FeatureType(str, Enum):
     """Geological features"""
     CAVE_SYSTEM = "cave_system"
@@ -196,7 +212,6 @@ class WorldGenerationParams(BaseModel):
 # PASS CONFIGURATION
 # =============================================================================
 
-# List of all generation passes in order
 GENERATION_PASSES = [
     "pass_01_planetary",
     "pass_02_tectonics",
@@ -211,7 +226,8 @@ GENERATION_PASSES = [
     "pass_11_soil",
     "pass_12_biomes",
     "pass_13_fauna",
-    "pass_14_polish",
+    "pass_14_resources",
+    "pass_15_polish",
 ]
 
 # Pass weights for progress calculation
@@ -229,7 +245,8 @@ PASS_WEIGHTS = {
     "pass_11_soil": 8,
     "pass_12_biomes": 7,
     "pass_13_fauna": 6,
-    "pass_14_polish": 2,
+    "pass_14_resources": 5,
+    "pass_15_polish": 2,
 }
 
 # =============================================================================
