@@ -1,6 +1,11 @@
 """
-World Builder - Pass 13: Fauna Distribution
+World Builder - Pass 13: Fauna Distribution (FIXED VERSION)
 Generates wildlife populations and migration patterns based on biomes and resources.
+
+FIXES APPLIED:
+1. Apex territories: Lowered thresholds using percentile-based approach
+2. Migration routes: Improved detection with combined herbivore populations
+3. Added extensive diagnostic output for debugging
 
 SCIENTIFIC BASIS:
 - Carrying capacity from Net Primary Productivity (NPP)
@@ -9,23 +14,14 @@ SCIENTIFIC BASIS:
 - Migration driven by resource seasonality
 - Distance-to-water constraints for most terrestrial species
 - Biome-specific fauna assemblages
-
-FAUNA CATEGORIES:
-- Herbivores: Grazers (grasslands), Browsers (forests), Mixed feeders
-- Predators: Small, Medium, Apex (territorial)
-- Omnivores: Opportunistic feeders
-- Aquatic: Fish, Amphibians, Waterfowl
-- Avian: Raptors, Songbirds, Migratory species
-- Insects: Pollinators, decomposers (abstracted)
 """
 
 import numpy as np
-from scipy.ndimage import gaussian_filter, distance_transform_edt, label
+from scipy.ndimage import gaussian_filter, distance_transform_edt, label, binary_dilation, binary_erosion
 from typing import Dict, List, Tuple
 
 from config import WorldGenerationParams, CHUNK_SIZE, BiomeType, FaunaCategory
 from models.world import WorldState
-
 from utils.noise import NoiseGenerator
 
 # Biome-specific fauna templates (relative abundance by category)
@@ -271,7 +267,7 @@ def execute(world_state: WorldState, params: WorldGenerationParams):
         
         fauna_density_maps[fauna_cat] = density_map
     
-    # STEP 7: Generate apex predator territories
+    # STEP 7: Generate apex predator territories (FIXED)
     print(f"    - Generating apex predator territories...")
     
     apex_territories = generate_apex_territories(
@@ -281,11 +277,12 @@ def execute(world_state: WorldState, params: WorldGenerationParams):
         rng
     )
     
-    # STEP 8: Generate migration routes for herbivores
+    # STEP 8: Generate migration routes for herbivores (FIXED)
     print(f"    - Generating herbivore migration routes...")
     
     migration_routes = generate_migration_routes(
         fauna_density_maps[FaunaCategory.HERBIVORE_GRAZER],
+        fauna_density_maps[FaunaCategory.HERBIVORE_BROWSER],
         elevation_global,
         temp_global,
         vegetation_density_global,
@@ -548,34 +545,66 @@ def generate_apex_territories(
     """
     Generate territorial boundaries for apex predators.
     
-    Each territory is a contiguous region claimed by one predator/pack.
+    FIXED: Uses percentile-based thresholds instead of fixed values to handle sparse populations.
     
     Returns:
         Territory ID map (0 = no territory, 1+ = territory IDs)
     """
     territories = np.zeros((size, size), dtype=np.uint32)
     
-    # Find suitable territories (high apex density on land)
-    suitable = (apex_density > 0.3) & land_mask
+    # Find suitable territories using percentile approach
+    land_density = apex_density[land_mask]
     
-    if not suitable.any():
+    if len(land_density) == 0 or land_density.max() < 0.001:
+        print(f"      - No apex predator population found (max density: {apex_density.max():.4f})")
         return territories
     
-    # Use watershed-style territory generation
+    # Use top 30% of areas with any apex presence
+    density_threshold = np.percentile(land_density[land_density > 0.001], 70)
+    density_threshold = max(density_threshold, 0.01)  # Minimum floor
+    
+    suitable = (apex_density > density_threshold) & land_mask
+    
+    if not suitable.any():
+        print(f"      - No suitable territory areas (threshold: {density_threshold:.3f}, max: {apex_density.max():.3f})")
+        return territories
+    
+    print(f"      - Apex density range: {land_density.min():.4f} to {land_density.max():.4f}")
+    print(f"      - Territory threshold: {density_threshold:.4f}")
+    print(f"      - Suitable area: {suitable.sum() / land_mask.sum() * 100:.1f}% of land")
+    
     # Place territory centers
     territory_centers = []
     
-    # Sample territory centers based on density
-    threshold = 0.5
-    candidates = np.argwhere((apex_density > threshold) & land_mask)
+    # Find high-density areas for territory centers (top 40% of suitable areas)
+    suitable_density = apex_density[suitable]
+    if len(suitable_density) > 0:
+        center_threshold = np.percentile(suitable_density, 60)
+    else:
+        center_threshold = density_threshold
+    
+    candidates = np.argwhere((apex_density >= center_threshold) & suitable)
+    
+    print(f"      - Territory center candidates: {len(candidates)}")
     
     if len(candidates) == 0:
-        candidates = np.argwhere(suitable)
+        print(f"      - No territory centers found")
+        return territories
     
-    # Space territories at least 50 cells apart
-    min_distance = 50
+    # Space territories - scale with world size
+    min_distance = max(25, size // 20)  # ~25-50 cells depending on size
+    max_territories = max(5, size // 100)  # Reasonable number of territories
+    
+    print(f"      - Minimum territory spacing: {min_distance} cells")
+    print(f"      - Maximum territories: {max_territories}")
+    
+    # Shuffle candidates for random placement
+    rng.shuffle(candidates)
     
     for candidate in candidates:
+        if len(territory_centers) >= max_territories:
+            break
+        
         x, y = candidate
         
         # Check distance to existing centers
@@ -589,44 +618,76 @@ def generate_apex_territories(
         if not too_close:
             territory_centers.append((x, y))
     
-    print(f"      - Generated {len(territory_centers)} apex predator territories")
+    num_territories = len(territory_centers)
+    print(f"      - Placed {num_territories} apex predator territories")
     
-    # Expand territories using Voronoi-like approach
-    if len(territory_centers) == 0:
+    if num_territories == 0:
         return territories
     
-    # Create distance fields for each center
+    # Expand territories using Voronoi-like approach
+    print(f"      - Expanding territories...")
+    
+    # Pre-calculate coordinates for efficiency
+    coords = np.array(np.meshgrid(np.arange(size), np.arange(size), indexing='ij'))
+    
     for i, (cx, cy) in enumerate(territory_centers):
         territory_id = i + 1
         
-        # Calculate distance from center
-        for x in range(size):
-            for y in range(size):
-                if not land_mask[x, y]:
-                    continue
-                
-                if apex_density[x, y] < 0.1:
-                    continue
-                
+        # Calculate distance from this center
+        distances_sq = (coords[0] - cx)**2 + (coords[1] - cy)**2
+        
+        # Only assign if on land and has some apex presence
+        mask = land_mask & (apex_density > 0.001)
+        
+        if i == 0:
+            # First territory - claim everything in range
+            in_range = (distances_sq < (min_distance * 1.5)**2) & mask
+            territories[in_range] = territory_id
+        else:
+            # Subsequent territories - only claim if closest and in range
+            max_radius = min_distance * 2
+            potential = (distances_sq < max_radius**2) & mask
+            
+            if not potential.any():
+                continue
+            
+            # For each potential cell, check if this is the closest center
+            pot_coords = np.argwhere(potential)
+            for px, py in pot_coords:
                 # Find nearest center
-                min_dist = float('inf')
+                min_dist_sq = float('inf')
                 nearest_id = 0
                 
                 for j, (ox, oy) in enumerate(territory_centers):
-                    dist = np.sqrt((x - ox)**2 + (y - oy)**2)
-                    if dist < min_dist:
-                        min_dist = dist
+                    d_sq = (px - ox)**2 + (py - oy)**2
+                    if d_sq < min_dist_sq:
+                        min_dist_sq = d_sq
                         nearest_id = j + 1
                 
-                # Assign to nearest territory if within range
-                if min_dist < 100:  # Max territory radius
-                    territories[x, y] = nearest_id
+                # Assign if this is the nearest territory and within range
+                if nearest_id == territory_id and min_dist_sq < max_radius**2:
+                    territories[px, py] = territory_id
+    
+    # Smooth territory boundaries
+    for tid in range(1, num_territories + 1):
+        territory_mask = territories == tid
+        # Dilate slightly then erode to smooth
+        territory_mask = binary_dilation(territory_mask, iterations=2)
+        territory_mask = binary_erosion(territory_mask, iterations=1)
+        territory_mask = territory_mask & land_mask
+        territories[territory_mask] = tid
+    
+    # Count territory sizes
+    for tid in range(1, num_territories + 1):
+        size_cells = (territories == tid).sum()
+        print(f"        Territory {tid}: {size_cells} cells")
     
     return territories
 
 
 def generate_migration_routes(
-    herbivore_density: np.ndarray,
+    herbivore_grazer_density: np.ndarray,
+    herbivore_browser_density: np.ndarray,
     elevation: np.ndarray,
     temp: np.ndarray,
     vegetation_density: np.ndarray,
@@ -637,47 +698,111 @@ def generate_migration_routes(
     """
     Generate seasonal migration routes for herbivores.
     
-    Migration occurs between summer (high elevation) and winter (low elevation) ranges.
+    FIXED: Uses combined herbivore populations and percentile-based thresholds
+    to ensure migration routes are generated even with sparse populations.
     
     Returns:
         Boolean array marking migration corridors
     """
     migration_routes = np.zeros((size, size), dtype=bool)
     
-    # Find high-density herbivore areas at different elevations
-    land_herbivores = herbivore_density * land_mask
+    # Combine herbivore populations for better coverage
+    total_herbivore = herbivore_grazer_density + herbivore_browser_density
+    land_herbivores = total_herbivore * land_mask
     
-    if land_herbivores.max() == 0:
+    if land_herbivores.max() < 0.001:
+        print(f"      - No significant herbivore populations for migration")
         return migration_routes
     
-    # Find summer ranges (high elevation, high vegetation)
-    elev_p75 = np.percentile(elevation[land_mask], 75)
-    elev_p25 = np.percentile(elevation[land_mask], 25)
+    print(f"      - Herbivore density range: {land_herbivores[land_mask].min():.4f} to {land_herbivores[land_mask].max():.4f}")
     
-    summer_range = (elevation > elev_p75) & (vegetation_density > 0.4) & (herbivore_density > 0.3) & land_mask
-    winter_range = (elevation < elev_p25) & (vegetation_density > 0.3) & (herbivore_density > 0.3) & land_mask
+    # Use percentile-based approach for elevation zones
+    land_elev = elevation[land_mask]
+    elev_p75 = np.percentile(land_elev, 75)
+    elev_p50 = np.percentile(land_elev, 50)
+    elev_p25 = np.percentile(land_elev, 25)
     
-    if not summer_range.any() or not winter_range.any():
+    # Temperature-based seasonal ranges (more robust than just elevation)
+    temp_land = temp[land_mask]
+    temp_p75 = np.percentile(temp_land, 75)  # Warm areas
+    temp_p50 = np.percentile(temp_land, 50)  # Median temperature
+    temp_p25 = np.percentile(temp_land, 25)  # Cool areas
+    
+    # SUMMER RANGES: High elevation OR cool temperatures + good vegetation + herbivores
+    # Lowered herbivore threshold from 0.3 to 0.15
+    summer_range = (
+        ((elevation > elev_p75) | (temp < temp_p25)) &
+        (vegetation_density > 0.3) &
+        (total_herbivore > 0.15) &
+        land_mask
+    )
+    
+    # WINTER RANGES: Low elevation + warm temperatures + good vegetation + herbivores
+    winter_range = (
+        (elevation < elev_p25) &
+        (temp > temp_p50) &
+        (vegetation_density > 0.25) &
+        (total_herbivore > 0.15) &
+        land_mask
+    )
+    
+    summer_area = summer_range.sum()
+    winter_area = winter_range.sum()
+    
+    print(f"      - Summer ranges: {summer_area} cells ({summer_area / land_mask.sum() * 100:.1f}% of land)")
+    print(f"      - Winter ranges: {winter_area} cells ({winter_area / land_mask.sum() * 100:.1f}% of land)")
+    
+    if summer_area == 0 or winter_area == 0:
+        print(f"      - Insufficient seasonal range area, using high-density herbivore corridors")
+        # Still mark high-density herbivore areas as potential corridors
+        migration_routes = (total_herbivore > 0.2) & land_mask
+        migration_routes = binary_dilation(migration_routes, iterations=3)
+        final_coverage = migration_routes.sum()
+        print(f"      - Fallback migration routes: {final_coverage} cells ({final_coverage / land_mask.sum() * 100:.1f}% of land)")
         return migration_routes
     
     # Find connected regions
     summer_regions, num_summer = label(summer_range)
     winter_regions, num_winter = label(winter_range)
     
-    print(f"      - Found {num_summer} summer ranges and {num_winter} winter ranges")
+    print(f"      - Summer regions: {num_summer}, Winter regions: {num_winter}")
     
-    # Connect summer and winter ranges with migration corridors
-    # For simplicity, mark high-density areas between elevation bands
+    # MIGRATION CORRIDORS: Areas between elevation zones with decent herbivore presence
+    mid_elevation = (elevation >= elev_p25) & (elevation <= elev_p75) & land_mask
     
-    mid_elevation_mask = (elevation >= elev_p25) & (elevation <= elev_p75) & land_mask
-    high_herbivore = (herbivore_density > 0.4) & mid_elevation_mask
+    # Lower threshold for corridors - top 50% of herbivore areas in mid-elevation
+    mid_elev_herbivores = total_herbivore[mid_elevation]
+    if len(mid_elev_herbivores) > 0 and mid_elev_herbivores.max() > 0:
+        corridor_threshold = np.percentile(mid_elev_herbivores[mid_elev_herbivores > 0], 50)
+        corridor_threshold = max(corridor_threshold, 0.1)  # Minimum threshold
+    else:
+        corridor_threshold = 0.1
     
-    migration_routes = high_herbivore | summer_range | winter_range
+    corridors = (
+        mid_elevation &
+        (total_herbivore > corridor_threshold) &
+        (vegetation_density > 0.2)
+    )
     
-    # Smooth corridors
-    from scipy.ndimage import binary_dilation
+    print(f"      - Migration corridor threshold: {corridor_threshold:.3f}")
+    print(f"      - Initial corridor cells: {corridors.sum()}")
+    
+    # Combine all migration areas
+    migration_routes = summer_range | winter_range | corridors
+    
+    # Dilate to create connected pathways
+    migration_routes = binary_dilation(migration_routes, iterations=3)
+    
+    # Ensure connection between summer and winter ranges
+    # Add high-density herbivore pathways
+    high_herbivore_paths = (total_herbivore > 0.25) & land_mask
+    high_herbivore_paths = binary_dilation(high_herbivore_paths, iterations=2)
+    migration_routes = migration_routes | high_herbivore_paths
+    
+    # Final dilation for smooth corridors
     migration_routes = binary_dilation(migration_routes, iterations=2)
     
+    final_coverage = migration_routes.sum()
+    print(f"      - Final migration routes: {final_coverage} cells ({final_coverage / land_mask.sum() * 100:.1f}% of land)")
+    
     return migration_routes
-
-
