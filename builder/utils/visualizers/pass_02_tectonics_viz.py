@@ -31,6 +31,11 @@ class Pass02TectonicsVisualizer(BaseVisualizer):
             filename: Output filename
             dpi: Resolution in dots per inch
         """
+        # Rotate data for display
+        plate_id = self._rotate_for_display(plate_id)
+        if tectonic_stress is not None:
+            tectonic_stress = self._rotate_for_display(tectonic_stress)
+        
         if tectonic_stress is not None:
             fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 9))
         else:

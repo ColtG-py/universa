@@ -63,6 +63,9 @@ class Pass12BiomesVisualizer(BaseVisualizer):
             filename: Output filename
             dpi: Resolution in dots per inch
         """
+        # Rotate data for display
+        biome_map = self._rotate_for_display(biome_map)
+        
         fig, ax = plt.subplots(figsize=(16, 12))
         
         # Create custom colormap
@@ -125,6 +128,9 @@ class Pass12BiomesVisualizer(BaseVisualizer):
             filename: Output filename
             dpi: Resolution in dots per inch
         """
+        # Rotate data for display
+        vegetation_density = self._rotate_for_display(vegetation_density)
+        
         fig, ax = plt.subplots(figsize=(12, 10))
         
         # Use greens colormap for vegetation
@@ -152,6 +158,9 @@ class Pass12BiomesVisualizer(BaseVisualizer):
             filename: Output filename
             dpi: Resolution in dots per inch
         """
+        # Rotate data for display
+        canopy_height = self._rotate_for_display(canopy_height)
+        
         fig, ax = plt.subplots(figsize=(12, 10))
         
         # Mask zero values (non-forest areas)
@@ -179,6 +188,9 @@ class Pass12BiomesVisualizer(BaseVisualizer):
             filename: Output filename
             dpi: Resolution in dots per inch
         """
+        # Rotate data for display
+        agricultural_suitability = self._rotate_for_display(agricultural_suitability)
+        
         fig, ax = plt.subplots(figsize=(12, 10))
         
         im = ax.imshow(agricultural_suitability, cmap='RdYlGn', interpolation='bilinear', vmin=0, vmax=1)
@@ -207,6 +219,10 @@ class Pass12BiomesVisualizer(BaseVisualizer):
             filename: Output filename
             dpi: Resolution in dots per inch
         """
+        # Rotate data for display
+        biome_map = self._rotate_for_display(biome_map)
+        elevation = self._rotate_for_display(elevation)
+        
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 9))
         
         # Left plot: Ocean biomes
@@ -265,6 +281,16 @@ class Pass12BiomesVisualizer(BaseVisualizer):
             filename: Output filename
             dpi: Resolution in dots per inch
         """
+        # Rotate data for display
+        if biome_map is not None:
+            biome_map = self._rotate_for_display(biome_map)
+        if vegetation_density is not None:
+            vegetation_density = self._rotate_for_display(vegetation_density)
+        if canopy_height is not None:
+            canopy_height = self._rotate_for_display(canopy_height)
+        if agricultural_suitability is not None:
+            agricultural_suitability = self._rotate_for_display(agricultural_suitability)
+        
         vis_list = [biome_map, vegetation_density, canopy_height, agricultural_suitability]
         n_plots = sum([v is not None for v in vis_list])
         

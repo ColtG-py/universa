@@ -35,6 +35,11 @@ class Pass06OceansVisualizer(BaseVisualizer):
             dpi: Resolution in dots per inch
             subsample: Downsampling factor for performance
         """
+        # Rotate data for display
+        ocean_current_speed = self._rotate_for_display(ocean_current_speed)
+        ocean_current_direction = self._rotate_for_display(ocean_current_direction)
+        elevation = self._rotate_for_display(elevation)
+        
         fig, ax = plt.subplots(figsize=(18, 14))
         
         # Create ocean mask

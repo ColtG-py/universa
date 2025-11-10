@@ -35,6 +35,12 @@ class Pass05AtmosphereVisualizer(BaseVisualizer):
             dpi: Resolution in dots per inch
             subsample: Downsampling factor for performance
         """
+        # Rotate data for display
+        wind_speed = self._rotate_for_display(wind_speed)
+        wind_direction = self._rotate_for_display(wind_direction)
+        if elevation is not None:
+            elevation = self._rotate_for_display(elevation)
+        
         fig, ax = plt.subplots(figsize=(18, 14))
         
         size = wind_speed.shape[0]

@@ -30,6 +30,9 @@ class Pass03TopographyVisualizer(BaseVisualizer):
             filename: Output filename
             dpi: Resolution in dots per inch
         """
+        # Rotate data for display
+        elevation = self._rotate_for_display(elevation)
+        
         fig, ax = plt.subplots(figsize=(12, 10))
         
         # Create custom colormap for elevation

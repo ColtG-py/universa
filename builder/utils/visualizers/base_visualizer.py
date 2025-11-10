@@ -31,6 +31,22 @@ class BaseVisualizer:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
     
+    def _rotate_for_display(self, data: np.ndarray) -> np.ndarray:
+        """
+        Rotate data 90 degrees clockwise for proper map orientation.
+        
+        This ensures poles are at top/bottom instead of left/right.
+        
+        Args:
+            data: 2D or 3D array to rotate
+            
+        Returns:
+            Rotated array
+        """
+        # Rotate 90 degrees clockwise (k=-1)
+        # This moves poles from left/right to top/bottom
+        return np.rot90(data, k=-1)
+    
     def save_figure(
         self,
         fig: plt.Figure,
@@ -64,6 +80,9 @@ class BaseVisualizer:
             colormap_name: Name of matplotlib colormap
             filename: Output filename
         """
+        # Rotate for display
+        data = self._rotate_for_display(data)
+        
         if not HAS_PIL:
             print("⚠ PIL not available, using matplotlib instead")
             fig, ax = plt.subplots(figsize=(10, 10))

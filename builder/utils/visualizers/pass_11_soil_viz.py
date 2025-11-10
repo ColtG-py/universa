@@ -29,6 +29,9 @@ class Pass11SoilVisualizer(BaseVisualizer):
             filename: Output filename
             dpi: Resolution in dots per inch
         """
+        # Rotate data for display
+        soil_type = self._rotate_for_display(soil_type)
+        
         fig, ax = plt.subplots(figsize=(12, 10))
         
         im = ax.imshow(soil_type, cmap='YlOrBr', interpolation='nearest')
@@ -51,6 +54,9 @@ class Pass11SoilVisualizer(BaseVisualizer):
             filename: Output filename
             dpi: Resolution in dots per inch
         """
+        # Rotate data for display
+        soil_ph = self._rotate_for_display(soil_ph)
+        
         fig, ax = plt.subplots(figsize=(12, 10))
         
         im = ax.imshow(soil_ph, cmap='RdYlGn', interpolation='bilinear', vmin=4, vmax=10)
@@ -76,6 +82,12 @@ class Pass11SoilVisualizer(BaseVisualizer):
             filename: Output filename
             dpi: Resolution in dots per inch
         """
+        # Rotate data for display
+        if soil_type is not None:
+            soil_type = self._rotate_for_display(soil_type)
+        if soil_ph is not None:
+            soil_ph = self._rotate_for_display(soil_ph)
+        
         n_plots = sum([soil_type is not None, soil_ph is not None])
         
         if n_plots == 0:

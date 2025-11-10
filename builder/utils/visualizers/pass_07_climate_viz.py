@@ -29,6 +29,9 @@ class Pass07ClimateVisualizer(BaseVisualizer):
             filename: Output filename
             dpi: Resolution in dots per inch
         """
+        # Rotate data for display
+        temperature = self._rotate_for_display(temperature)
+        
         fig, ax = plt.subplots(figsize=(12, 10))
         
         im = ax.imshow(temperature, cmap='RdYlBu_r', interpolation='bilinear')
@@ -53,6 +56,9 @@ class Pass07ClimateVisualizer(BaseVisualizer):
             filename: Output filename
             dpi: Resolution in dots per inch
         """
+        # Rotate data for display
+        precipitation = self._rotate_for_display(precipitation)
+        
         fig, ax = plt.subplots(figsize=(12, 10))
         
         im = ax.imshow(precipitation, cmap='Blues', interpolation='bilinear')
@@ -79,6 +85,10 @@ class Pass07ClimateVisualizer(BaseVisualizer):
             filename: Output filename
             dpi: Resolution in dots per inch
         """
+        # Rotate data for display
+        temperature = self._rotate_for_display(temperature)
+        precipitation = self._rotate_for_display(precipitation)
+        
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 9))
         
         # Temperature

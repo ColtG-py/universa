@@ -36,6 +36,15 @@ class Pass10RiversVisualizer(BaseVisualizer):
             filename: Output filename
             dpi: Resolution in dots per inch
         """
+        # Rotate data for display
+        river_presence = self._rotate_for_display(river_presence)
+        if river_flow is not None:
+            river_flow = self._rotate_for_display(river_flow)
+        if elevation is not None:
+            elevation = self._rotate_for_display(elevation)
+        if discharge is not None:
+            discharge = self._rotate_for_display(discharge)
+        
         # Check if we have any rivers
         has_rivers = np.any(river_presence)
         

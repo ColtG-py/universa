@@ -31,6 +31,11 @@ class Pass09GroundwaterVisualizer(BaseVisualizer):
             filename: Output filename
             dpi: Resolution in dots per inch
         """
+        # Rotate data for display
+        water_table_depth = self._rotate_for_display(water_table_depth)
+        if elevation is not None:
+            elevation = self._rotate_for_display(elevation)
+        
         fig, ax = plt.subplots(figsize=(12, 10))
         
         # Show elevation as faint background if available

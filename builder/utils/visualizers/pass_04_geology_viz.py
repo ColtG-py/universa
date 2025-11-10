@@ -33,6 +33,9 @@ class Pass04GeologyVisualizer(BaseVisualizer):
         """
         from config import RockType
         
+        # Rotate data for display
+        bedrock_type = self._rotate_for_display(bedrock_type)
+        
         fig, ax = plt.subplots(figsize=(14, 10))
         
         # Create custom discrete colormap for rock types
@@ -147,6 +150,9 @@ class Pass04GeologyVisualizer(BaseVisualizer):
                 break
             
             ax = axes[idx]
+            
+            # Rotate data for display
+            richness = self._rotate_for_display(richness)
             
             # Get mineral name
             try:
