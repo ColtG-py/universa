@@ -2,7 +2,7 @@
 World Builder - Configuration and Constants
 Contains all global settings, constants, and configuration for world generation
 
-UPDATED: Added BiomeType enum for Pass 12
+UPDATED: Added ocean subtype BiomeTypes for Pass 12
 """
 
 from enum import IntEnum, Enum
@@ -92,20 +92,29 @@ class DrainageClass(IntEnum):
 
 
 class BiomeType(IntEnum):
-    """Biome classifications based on Whittaker diagram"""
-    OCEAN = 0
-    ICE = 1
-    TUNDRA = 2
-    COLD_DESERT = 3
-    BOREAL_FOREST = 4
-    TEMPERATE_RAINFOREST = 5
-    TEMPERATE_DECIDUOUS_FOREST = 6
-    TEMPERATE_GRASSLAND = 7
-    MEDITERRANEAN = 8
-    HOT_DESERT = 9
-    SAVANNA = 10
-    TROPICAL_SEASONAL_FOREST = 11
-    TROPICAL_RAINFOREST = 12
+    """Biome classifications based on Whittaker diagram + ocean subtypes"""
+    # Ocean subtypes (negative elevations)
+    OCEAN_TRENCH = 0                 # Very deep ocean (< -4000m), often at convergent boundaries
+    OCEAN_DEEP = 1                   # Deep ocean (-4000m to -1000m)
+    OCEAN_SHALLOW = 2                # Shallow ocean (-1000m to -200m)
+    OCEAN_SHELF = 3                  # Continental shelf (-200m to 0m)
+    OCEAN_CORAL_REEF = 4             # Warm, shallow tropical waters suitable for coral
+    
+    # Land biomes (positive elevations)
+    ICE = 10                         # Permanent ice and snow
+    TUNDRA = 11                      # Arctic/alpine tundra
+    COLD_DESERT = 12                 # Cold, dry regions
+    BOREAL_FOREST = 13               # Taiga/boreal forest
+    TEMPERATE_RAINFOREST = 14        # Cool, wet forests (Pacific Northwest style)
+    TEMPERATE_DECIDUOUS_FOREST = 15  # Classic temperate forest
+    TEMPERATE_GRASSLAND = 16         # Prairies, steppes
+    MEDITERRANEAN = 17               # Mediterranean climate (dry summer, wet winter)
+    HOT_DESERT = 18                  # Hot, arid deserts
+    SAVANNA = 19                     # Tropical grasslands with scattered trees
+    TROPICAL_SEASONAL_FOREST = 20    # Tropical forests with dry season
+    TROPICAL_RAINFOREST = 21         # Tropical rainforest
+    ALPINE = 22                      # High elevation, above treeline
+    MANGROVE = 23                    # Coastal tropical wetlands
 
 
 class FeatureType(str, Enum):
@@ -139,7 +148,7 @@ class WorldGenerationParams(BaseModel):
     rotation_hours: float = Field(24.0, description="Day length in hours")
     
     # Tectonic Parameters
-    num_plates: int = Field(12, ge=4, le=100, description="Number of tectonic plates")
+    num_plates: int = Field(12, ge=4, le=1000, description="Number of tectonic plates")
     plate_speed_mm_year: float = Field(50.0, description="Plate movement speed in mm/year")
     
     # Atmospheric Parameters
@@ -184,7 +193,7 @@ GENERATION_PASSES = [
     "pass_09_groundwater",
     "pass_10_rivers",
     "pass_11_soil",
-    "pass_12_biomes",  # ADDED
+    "pass_12_biomes",
     "pass_13_features",
     "pass_14_polish",
 ]
@@ -202,7 +211,7 @@ PASS_WEIGHTS = {
     "pass_09_groundwater": 7,
     "pass_10_rivers": 10,
     "pass_11_soil": 8,
-    "pass_12_biomes": 7,  # ADDED
+    "pass_12_biomes": 7,
     "pass_13_features": 6,
     "pass_14_polish": 2,
 }

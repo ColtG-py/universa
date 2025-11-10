@@ -40,7 +40,7 @@ def demo_small_world_with_viz():
         rotation_hours=24.0,
         
         # Tectonic parameters
-        num_plates=30,
+        num_plates=58,
         plate_speed_mm_year=50.0,
         
         # Atmospheric parameters

@@ -1,6 +1,7 @@
 """
 World Builder - Pass 12: Biomes Visualization
 Visualizes biome classification, vegetation density, and agricultural suitability
+WITH OCEAN SUBTYPES
 """
 
 import numpy as np
@@ -16,6 +17,7 @@ from config import BiomeType
 class Pass12BiomesVisualizer(BaseVisualizer):
     """
     Visualizer for biome classification and vegetation properties.
+    Includes ocean subtype visualization.
     """
     
     def __init__(self, output_dir: str = "visualizations"):
@@ -23,19 +25,28 @@ class Pass12BiomesVisualizer(BaseVisualizer):
         
         # Define biome colors (based on real-world biome colors)
         self.biome_colors = {
-            BiomeType.OCEAN: '#0077be',
-            BiomeType.ICE: '#ffffff',
-            BiomeType.TUNDRA: '#c4d6d6',
-            BiomeType.COLD_DESERT: '#e8d4b0',
-            BiomeType.BOREAL_FOREST: '#2d5016',
-            BiomeType.TEMPERATE_RAINFOREST: '#1a472a',
-            BiomeType.TEMPERATE_DECIDUOUS_FOREST: '#5f8c4a',
-            BiomeType.TEMPERATE_GRASSLAND: '#b8c776',
-            BiomeType.MEDITERRANEAN: '#c9b070',
-            BiomeType.HOT_DESERT: '#f4e7c7',
-            BiomeType.SAVANNA: '#d4ba7c',
-            BiomeType.TROPICAL_SEASONAL_FOREST: '#6ba048',
-            BiomeType.TROPICAL_RAINFOREST: '#0f6e32',
+            # Ocean subtypes (blue gradient from light to dark)
+            BiomeType.OCEAN_TRENCH: '#172D82',        # Very dark blue (deep ocean trenches)
+            BiomeType.OCEAN_DEEP: '#105984',          # Dark blue (abyssal)
+            BiomeType.OCEAN_SHALLOW: '#3DC7D9',       # Medium blue
+            BiomeType.OCEAN_SHELF: '#3399ff',         # Light blue (continental shelf)
+            BiomeType.OCEAN_CORAL_REEF: '#3DD982',    # Cyan/turquoise (tropical reefs)
+            
+            # Land biomes
+            BiomeType.ICE: '#ffffff',                 # White
+            BiomeType.TUNDRA: '#c4d6d6',             # Light gray-blue
+            BiomeType.COLD_DESERT: '#e8d4b0',        # Tan
+            BiomeType.BOREAL_FOREST: '#2d5016',      # Dark green
+            BiomeType.TEMPERATE_RAINFOREST: '#1a472a', # Very dark green
+            BiomeType.TEMPERATE_DECIDUOUS_FOREST: '#5f8c4a', # Medium green
+            BiomeType.TEMPERATE_GRASSLAND: '#b8c776', # Light green-yellow
+            BiomeType.MEDITERRANEAN: '#c9b070',       # Olive/brown
+            BiomeType.HOT_DESERT: '#f4e7c7',         # Light beige
+            BiomeType.SAVANNA: '#d4ba7c',            # Tan-yellow
+            BiomeType.TROPICAL_SEASONAL_FOREST: '#6ba048', # Bright green
+            BiomeType.TROPICAL_RAINFOREST: '#0f6e32', # Deep green
+            BiomeType.ALPINE: '#a8a8a8',             # Gray
+            BiomeType.MANGROVE: '#4d7358',           # Dark teal-green
         }
     
     def visualize_biomes(
@@ -52,7 +63,7 @@ class Pass12BiomesVisualizer(BaseVisualizer):
             filename: Output filename
             dpi: Resolution in dots per inch
         """
-        fig, ax = plt.subplots(figsize=(14, 12))
+        fig, ax = plt.subplots(figsize=(16, 12))
         
         # Create custom colormap
         biome_ids = sorted(set(biome_map.flatten()))
@@ -65,18 +76,38 @@ class Pass12BiomesVisualizer(BaseVisualizer):
         
         # Plot
         im = ax.imshow(biome_map, cmap=cmap, norm=norm, interpolation='nearest')
-        ax.set_title('World Biomes (Whittaker Classification)', fontsize=18, fontweight='bold', pad=20)
+        ax.set_title('World Biomes (Whittaker Classification + Ocean Subtypes)', 
+                    fontsize=18, fontweight='bold', pad=20)
         ax.axis('off')
         
-        # Create legend
-        legend_elements = []
-        for bid in biome_ids:
-            biome_name = BiomeType(bid).name.replace('_', ' ').title()
-            color = self.biome_colors.get(BiomeType(bid), '#cccccc')
-            legend_elements.append(Patch(facecolor=color, label=biome_name))
+        # Create legend - separate ocean and land biomes
+        legend_elements_ocean = []
+        legend_elements_land = []
         
-        ax.legend(handles=legend_elements, loc='center left', bbox_to_anchor=(1, 0.5),
-                 frameon=True, fontsize=10, title='Biome Types', title_fontsize=12)
+        for bid in biome_ids:
+            biome_type = BiomeType(bid)
+            biome_name = biome_type.name.replace('_', ' ').title()
+            color = self.biome_colors.get(biome_type, '#cccccc')
+            
+            if 'OCEAN' in biome_type.name:
+                legend_elements_ocean.append(Patch(facecolor=color, label=biome_name))
+            else:
+                legend_elements_land.append(Patch(facecolor=color, label=biome_name))
+        
+        # Create two-column legend
+        all_elements = []
+        if legend_elements_ocean:
+            all_elements.extend(legend_elements_ocean)
+        if legend_elements_land:
+            all_elements.extend(legend_elements_land)
+        
+        # Split into two columns
+        n_items = len(all_elements)
+        ncol = 2 if n_items > 10 else 1
+        
+        ax.legend(handles=all_elements, loc='center left', bbox_to_anchor=(1, 0.5),
+                 frameon=True, fontsize=9, title='Biome Types', title_fontsize=11,
+                 ncol=ncol)
         
         self.save_figure(fig, filename, dpi)
     
@@ -160,6 +191,60 @@ class Pass12BiomesVisualizer(BaseVisualizer):
         
         self.save_figure(fig, filename, dpi)
     
+    def visualize_ocean_detail(
+        self,
+        biome_map: np.ndarray,
+        elevation: np.ndarray,
+        filename: str = "pass_12_ocean_detail.png",
+        dpi: int = 150
+    ) -> None:
+        """
+        Visualize ocean biomes in detail.
+        
+        Args:
+            biome_map: Array of biome type IDs
+            elevation: Elevation array (for depth calculation)
+            filename: Output filename
+            dpi: Resolution in dots per inch
+        """
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 9))
+        
+        # Left plot: Ocean biomes
+        ocean_biomes = biome_map.copy()
+        ocean_biomes[elevation > 0] = 0  # Mask land
+        
+        ocean_biome_ids = sorted([b for b in set(ocean_biomes.flatten()) if b != 0])
+        if ocean_biome_ids:
+            colors = [self.biome_colors.get(BiomeType(bid), '#cccccc') for bid in ocean_biome_ids]
+            cmap = mcolors.ListedColormap(colors)
+            bounds = [bid - 0.5 for bid in ocean_biome_ids] + [max(ocean_biome_ids) + 0.5]
+            norm = mcolors.BoundaryNorm(bounds, cmap.N)
+            
+            im1 = ax1.imshow(ocean_biomes, cmap=cmap, norm=norm, interpolation='nearest')
+            ax1.set_title('Ocean Biome Types', fontsize=14, fontweight='bold')
+            ax1.axis('off')
+            
+            legend_elements = []
+            for bid in ocean_biome_ids:
+                biome_name = BiomeType(bid).name.replace('_', ' ').title()
+                color = self.biome_colors.get(BiomeType(bid), '#cccccc')
+                legend_elements.append(Patch(facecolor=color, label=biome_name))
+            
+            ax1.legend(handles=legend_elements, loc='lower left', frameon=True, fontsize=10)
+        
+        # Right plot: Ocean depth
+        ocean_depth = -elevation.copy()
+        ocean_depth[elevation > 0] = np.nan
+        
+        im2 = ax2.imshow(ocean_depth, cmap='Blues_r', interpolation='bilinear')
+        cbar = plt.colorbar(im2, ax=ax2, label='Ocean Depth (m)', shrink=0.8)
+        ax2.set_title('Ocean Depth', fontsize=14, fontweight='bold')
+        ax2.axis('off')
+        
+        plt.suptitle('Ocean Biome Detail', fontsize=18, fontweight='bold', y=0.98)
+        
+        self.save_figure(fig, filename, dpi)
+    
     def visualize_combined(
         self,
         biome_map: Optional[np.ndarray] = None,
@@ -180,7 +265,6 @@ class Pass12BiomesVisualizer(BaseVisualizer):
             filename: Output filename
             dpi: Resolution in dots per inch
         """
-        # Count how many visualizations we have
         vis_list = [biome_map, vegetation_density, canopy_height, agricultural_suitability]
         n_plots = sum([v is not None for v in vis_list])
         
@@ -188,15 +272,9 @@ class Pass12BiomesVisualizer(BaseVisualizer):
             print("⚠ No biome data to visualize")
             return
         
-        # Create figure with appropriate layout
-        if n_plots == 1:
-            fig, axes = plt.subplots(1, 1, figsize=(12, 10))
-            axes = [axes]
-        elif n_plots == 2:
-            fig, axes = plt.subplots(1, 2, figsize=(20, 9))
-        elif n_plots <= 4:
-            fig, axes = plt.subplots(2, 2, figsize=(20, 18))
-            axes = axes.flatten()
+        # Create 2x2 grid
+        fig, axes = plt.subplots(2, 2, figsize=(20, 18))
+        axes = axes.flatten()
         
         plot_idx = 0
         
@@ -265,6 +343,7 @@ class Pass12BiomesVisualizer(BaseVisualizer):
         canopy_filename: str = "pass_12_canopy.png",
         agriculture_filename: str = "pass_12_agriculture.png",
         combined_filename: str = "pass_12_biomes_combined.png",
+        ocean_filename: str = "pass_12_ocean_detail.png",
         dpi: int = 150
     ) -> None:
         """
@@ -277,6 +356,7 @@ class Pass12BiomesVisualizer(BaseVisualizer):
             canopy_filename: Output filename for canopy height
             agriculture_filename: Output filename for agricultural suitability
             combined_filename: Output filename for combined view
+            ocean_filename: Output filename for ocean detail
             dpi: Resolution in dots per inch
         """
         from config import CHUNK_SIZE
@@ -286,6 +366,7 @@ class Pass12BiomesVisualizer(BaseVisualizer):
         vegetation_density = None
         canopy_height = None
         agricultural_suitability = None
+        elevation = None
         
         # Check what data is available
         sample_chunk = next(iter(world_state.chunks.values()))
@@ -297,6 +378,8 @@ class Pass12BiomesVisualizer(BaseVisualizer):
             canopy_height = np.zeros((size, size), dtype=np.float32)
         if hasattr(sample_chunk, 'agricultural_suitability') and sample_chunk.agricultural_suitability is not None:
             agricultural_suitability = np.zeros((size, size), dtype=np.float32)
+        if hasattr(sample_chunk, 'elevation') and sample_chunk.elevation is not None:
+            elevation = np.zeros((size, size), dtype=np.float32)
         
         # Stitch chunks together
         for (chunk_x, chunk_y), chunk in world_state.chunks.items():
@@ -319,6 +402,9 @@ class Pass12BiomesVisualizer(BaseVisualizer):
             
             if agricultural_suitability is not None and hasattr(chunk, 'agricultural_suitability') and chunk.agricultural_suitability is not None:
                 agricultural_suitability[x_start:x_end, y_start:y_end] = chunk.agricultural_suitability[:chunk_width, :chunk_height]
+            
+            if elevation is not None and hasattr(chunk, 'elevation') and chunk.elevation is not None:
+                elevation[x_start:x_end, y_start:y_end] = chunk.elevation[:chunk_width, :chunk_height]
         
         # Generate individual visualizations
         if biome_map is not None:
@@ -332,6 +418,10 @@ class Pass12BiomesVisualizer(BaseVisualizer):
         
         if agricultural_suitability is not None:
             self.visualize_agricultural_suitability(agricultural_suitability, agriculture_filename, dpi)
+        
+        # Generate ocean detail visualization
+        if biome_map is not None and elevation is not None:
+            self.visualize_ocean_detail(biome_map, elevation, ocean_filename, dpi)
         
         # Generate combined view
         self.visualize_combined(
