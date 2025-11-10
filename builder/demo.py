@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-World Builder - Demo Script with Visualization
-Demonstrates world generation capabilities and outputs visualizations for each layer.
+World Builder - Interactive Demo with Napari Visualization
+Demonstrates world generation capabilities with interactive layer exploration.
 """
 
 import sys
@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from config import WorldGenerationParams, WorldSize
 from generation.pipeline import create_pipeline
-from utils.visualizers import UnifiedVisualizer
+from utils.visualizers import UnifiedNapariVisualizer, NAPARI_AVAILABLE, view_world_interactive
 
 
 def print_section(title):
@@ -24,13 +24,13 @@ def print_section(title):
     print(f"{'='*70}\n")
 
 
-def demo_small_world_with_viz():
-    """Generate a small demo world with full visualization"""
-    print_section("WORLD BUILDER - PROCEDURAL GENERATION WITH VISUALIZATION")
+def demo_world_with_napari():
+    """Generate a demo world and visualize interactively with Napari"""
+    print_section("WORLD BUILDER - INTERACTIVE GENERATION WITH NAPARI")
     
     # Configure world generation parameters
     params = WorldGenerationParams(
-        seed=100,
+        seed=420,
         size=WorldSize.SMALL,  # 512x512 world
         
         # Planetary parameters
@@ -131,12 +131,6 @@ def demo_small_world_with_viz():
         print(f"  Maximum: {precipitation.max():.0f}mm/year")
         print(f"  Mean: {precipitation.mean():.0f}mm/year")
     
-    # Generate visualizations using the new modular system
-    print_section("GENERATING VISUALIZATIONS")
-    
-    visualizer = UnifiedVisualizer(output_dir="world_visualizations")
-    visualizer.visualize_all(world_state, prefix=f"seed{params.seed}", dpi=150)
-    
     # Count geological features
     print_section("GEOLOGICAL FEATURES")
     
@@ -153,26 +147,79 @@ def demo_small_world_with_viz():
     else:
         print("No discrete features generated in this world.")
     
+    print_section("LAUNCHING INTERACTIVE NAPARI VIEWER")
+    
+    if not NAPARI_AVAILABLE:
+        print("❌ Napari is not installed!")
+        print("   Install with: pip install 'napari[all]'")
+        print("\nSkipping interactive visualization...")
+        return world_state
+    
+    print("🌍 Opening interactive world viewer...")
+    print("\nTips for exploring your world:")
+    print("  • Start with Elevation layer (already visible)")
+    print("  • Toggle Climate → Temperature to see temperature patterns")
+    print("  • Enable Rivers to see hydrology")
+    print("  • Check out Biomes for ecological zones")
+    print("  • Use opacity sliders to blend layers")
+    print("\nClosing this window will end the demo.\n")
+    
+    # Launch interactive viewer
+    view_world_interactive(world_state)
+    
     print_section("DEMO COMPLETE")
-    print("\nWorld generation successful!")
+    print("\nWorld generation and visualization successful!")
     print(f"World size: {params.size}x{params.size} ({len(world_state.chunks)} chunks)")
     print(f"Generation time: {generation_time:.2f}s")
-    print(f"\nVisualizations saved to: world_visualizations/")
     
     return world_state
+
+
+def demo_specific_passes():
+    """Demo showing specific passes only"""
+    print_section("FOCUSED VIEW - CLIMATE AND BIOMES ONLY")
+    
+    # Quick world gen
+    params = WorldGenerationParams(seed=123, size=WorldSize.TINY)
+    pipeline = create_pipeline(params)
+    world_state = pipeline.generate()
+    
+    if NAPARI_AVAILABLE:
+        print("Opening viewer with Climate (Pass 7) and Biomes (Pass 12) only...")
+        view_world_interactive(world_state, passes=[3, 7, 12])  # Include elevation for context
+    else:
+        print("❌ Napari not available for focused view demo")
+
 
 def main():
     """Main demo function"""
     try:
         print("\n" + "🌍 "*20)
-        print("WORLD BUILDER - MODULAR VISUALIZATION SYSTEM DEMO")
+        print("WORLD BUILDER - INTERACTIVE NAPARI VISUALIZATION DEMO")
         print("🌍 "*20 + "\n")
         
-        # Demo 1: Full world with all visualizations
-        print("\n📍 DEMO 1: Complete World Generation with All Visualizations")
-        world_state = demo_small_world_with_viz()
+        # Check napari availability
+        if not NAPARI_AVAILABLE:
+            print("⚠️  WARNING: Napari is not installed!")
+            print("   This demo requires napari for interactive visualization.")
+            print("   Install with: pip install 'napari[all]'")
+            print("\nProceeding with world generation only...\n")
+        
+        # Demo 1: Full world with interactive visualization
+        print("\n📍 DEMO 1: Complete World with Interactive Napari Viewer")
+        world_state = demo_world_with_napari()
+        
+        # Optional: Demo 2 - focused view
+        # Uncomment to try viewing specific passes only
+        # print("\n📍 DEMO 2: Focused Pass View")
+        # demo_specific_passes()
+        
         return 0
         
+    except KeyboardInterrupt:
+        print("\n\n⚠️  Demo interrupted by user")
+        return 0
+    
     except Exception as e:
         print(f"\n❌ Error during demo: {e}")
         import traceback
