@@ -6,7 +6,7 @@ UPDATED: Added resource attributes for Pass 14 (Natural Resources)
 """
 
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from uuid import UUID, uuid4
 from pydantic import BaseModel, Field
 import numpy as np
@@ -22,6 +22,8 @@ from config import (
     FaunaCategory,
     TimberType,
     QuarryType,
+    ElementalAffinity,
+    EnchantedLocationType,
     CHUNK_SIZE
 )
 
@@ -105,10 +107,45 @@ class GeologicalFeature(BaseModel):
     chunk_x: int
     chunk_y: int
     properties: Dict[str, Any] = Field(default_factory=dict)
+
+
+# =============================================================================
+# MAGIC SYSTEM DATA STRUCTURES
+# =============================================================================
+
+class LeyLineSegment(BaseModel):
+    """
+    A segment of a ley line connecting two anchor points.
+    Ley lines form a network of magical energy flows.
+    """
+    segment_id: UUID = Field(default_factory=uuid4)
+    start_x: int
+    start_y: int
+    end_x: int
+    end_y: int
+    path_points: List[Tuple[int, int]]  # Actual path through world
+    strength: float = Field(ge=0.0, le=1.0, description="Magical power of this ley line")
+    
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class EnchantedLocation(BaseModel):
+    """
+    Special magical location of interest.
+    These are points of concentrated magical power or corruption.
+    """
+    location_id: UUID = Field(default_factory=uuid4)
+    location_type: str  # "mana_well", "fey_grove", "dragon_lair", etc.
+    location_x: int
+    location_y: int
+    chunk_x: int
+    chunk_y: int
+    power_level: float = Field(ge=0.0, le=1.0, description="Magical power at this location")
+    properties: Dict[str, Any] = Field(default_factory=dict)
     
     class Config:
         use_enum_values = True
-
 
 # =============================================================================
 # WORLD CHUNK DATA
@@ -179,6 +216,16 @@ class WorldChunk:
         self.rare_resources: Optional[np.ndarray] = None  # float32[256, 256] - 0-1 scale (gemstones, magical)
         self.resource_accessibility: Optional[np.ndarray] = None  # float32[256, 256] - 0-1 scale (extraction difficulty)
         
+        # Pass 15: Magic & Ley Lines
+        self.mana_concentration: Optional[np.ndarray] = None  # float32[256, 256] - 0-1 scale
+        self.ley_line_presence: Optional[np.ndarray] = None  # bool[256, 256]
+        self.ley_line_node: Optional[np.ndarray] = None  # bool[256, 256] - intersection points
+        self.corrupted_zone: Optional[np.ndarray] = None  # bool[256, 256]
+        self.elemental_affinity: Optional[np.ndarray] = None  # uint8[256, 256] - ElementalAffinity enum
+    
+        # Enchanted locations in this chunk
+        self.enchanted_locations: List[EnchantedLocation] = []
+
         # Geological features (discrete points)
         self.geological_features: List[GeologicalFeature] = []
         
@@ -223,6 +270,8 @@ class WorldChunk:
             "apex_predator_territories", "migration_routes",
             "quarry_quality", "quarry_type", "timber_quality", "timber_type",
             "agricultural_yield", "fishing_quality", "rare_resources", "resource_accessibility",
+            "mana_concentration", "ley_line_presence", "ley_line_node",
+            "corrupted_zone", "elemental_affinity",
         ]
         
         for field in array_fields:
@@ -255,6 +304,11 @@ class WorldChunk:
         data["geological_features"] = [
             feature.dict() for feature in self.geological_features
         ]
+
+        if self.enchanted_locations:
+            data["enchanted_locations"] = [
+                loc.dict() for loc in self.enchanted_locations
+            ]
         
         return data
     
@@ -299,6 +353,11 @@ class WorldChunk:
             "fishing_quality": np.float32,
             "rare_resources": np.float32,
             "resource_accessibility": np.float32,
+            "mana_concentration": np.float32,
+            "ley_line_presence": bool,
+            "ley_line_node": bool,
+            "corrupted_zone": bool,
+            "elemental_affinity": np.uint8,
         }
         
         for field, dtype in array_fields.items():
@@ -332,6 +391,12 @@ class WorldChunk:
                 GeologicalFeature(**feature)
                 for feature in data["geological_features"]
             ]
+
+        if "enchanted_locations" in data and data["enchanted_locations"]:
+            chunk.enchanted_locations = [
+                EnchantedLocation(**loc)
+                for loc in data["enchanted_locations"]
+            ]
         
         return chunk
 
@@ -362,6 +427,9 @@ class WorldState:
         # Tectonic system (from Pass 2)
         self.tectonic_system: Optional[TectonicSystem] = None
         
+        # Ley line network (from Pass 15)
+        self.ley_line_network: Optional[List[LeyLineSegment]] = None
+
         # Chunks dictionary: (chunk_x, chunk_y) -> WorldChunk
         self.chunks: Dict[tuple, WorldChunk] = {}
     

@@ -25,6 +25,7 @@ from .pass_11_soil_viz_napari import Pass11SoilNapariVisualizer
 from .pass_12_biomes_viz_napari import Pass12BiomesNapariVisualizer
 from .pass_13_fauna_viz_napari import Pass13FaunaNapariVisualizer
 from .pass_14_resources_viz_napari import Pass14ResourcesNapariVisualizer
+from .pass_15_magic_viz_napari import Pass15MagicNapariVisualizer
 
 class UnifiedNapariVisualizer:
     """
@@ -65,6 +66,7 @@ class UnifiedNapariVisualizer:
             12: Pass12BiomesNapariVisualizer(),
             13: Pass13FaunaNapariVisualizer(),
             14: Pass14ResourcesNapariVisualizer(),
+            15: Pass15MagicNapariVisualizer(),
         }
         
         self.viewer = None

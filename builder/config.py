@@ -2,7 +2,7 @@
 World Builder - Configuration and Constants
 Contains all global settings, constants, and configuration for world generation
 
-UPDATED: Added ocean subtype BiomeTypes for Pass 12
+UPDATED: Added ElementalAffinity and EnchantedLocationType for Pass 15
 """
 
 from enum import IntEnum, Enum
@@ -108,7 +108,7 @@ class BiomeType(IntEnum):
     TEMPERATE_RAINFOREST = 14        # Cool, wet forests (Pacific Northwest style)
     TEMPERATE_DECIDUOUS_FOREST = 15  # Classic temperate forest
     TEMPERATE_GRASSLAND = 16         # Prairies, steppes
-    MEDITERRANEAN = 17               # Mediterranean climate (dry summer, wet winter)
+    MEDITERRANEAN = 17               # Mediterranean climate (dry summer/wet winter)
     HOT_DESERT = 18                  # Hot, arid deserts
     SAVANNA = 19                     # Tropical grasslands with scattered trees
     TROPICAL_SEASONAL_FOREST = 20    # Tropical forests with dry season
@@ -159,6 +159,25 @@ class FeatureType(str, Enum):
     SINKHOLE = "sinkhole"
     LAVA_TUBE = "lava_tube"
     MINERAL_VEIN = "mineral_vein"
+
+
+class ElementalAffinity(IntEnum):
+    """Elemental magic types based on terrain"""
+    NONE = 0
+    FIRE = 1      # Deserts, volcanoes, hot areas
+    WATER = 2     # Coasts, rivers, wet areas
+    EARTH = 3     # Mountains, caves, forests
+    AIR = 4       # High peaks, windy areas
+    ARCANE = 5    # Mixed/neutral magic
+
+
+class EnchantedLocationType(str, Enum):
+    """Types of enchanted locations"""
+    MANA_WELL = "mana_well"              # Ley line convergence points
+    FEY_GROVE = "fey_grove"              # Ancient magical forests
+    DRAGON_LAIR = "dragon_lair"          # Mountain caves with elemental power
+    CRYSTAL_CAVERN = "crystal_cavern"    # Underground magic amplifiers
+    CORRUPTED_SITE = "corrupted_site"    # Magically warped zones
 
 
 # =============================================================================
@@ -227,7 +246,7 @@ GENERATION_PASSES = [
     "pass_12_biomes",
     "pass_13_fauna",
     "pass_14_resources",
-    "pass_15_polish",
+    "pass_15_magic",
 ]
 
 # Pass weights for progress calculation
@@ -246,7 +265,7 @@ PASS_WEIGHTS = {
     "pass_12_biomes": 7,
     "pass_13_fauna": 6,
     "pass_14_resources": 5,
-    "pass_15_polish": 2,
+    "pass_15_magic": 6,
 }
 
 # =============================================================================
