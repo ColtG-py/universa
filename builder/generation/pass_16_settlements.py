@@ -1,28 +1,21 @@
 """
-World Builder - Pass 16: Settlement Sites
-Generates settlement locations, types, sizes, and specializations.
+World Builder - Pass 16: Settlement Sites (REFACTORED)
+Generates settlement locations with percentile-based scoring and hierarchical spacing.
 
-APPROACH:
-- Hierarchical placement: Cities → Towns → Villages → Hamlets → Fortresses → Monasteries
-- Competitive inhibition: Larger settlements suppress nearby sites
-- Weighted scoring for site selection (water, defensibility, resources, climate, accessibility)
-- Soil quality and magic concentration as additional factors
-- Even distribution of specialization types
-- 10-20% of sites marked as ruins for exploration content
+KEY IMPROVEMENTS:
+- Percentile-based scoring (adaptive to world conditions)
+- Hierarchical spacing (villages can be near cities, but not near other villages)
+- Kingdom-like clustering (settlements group around major cities)
+- Debug layers for troubleshooting
 
-SETTLEMENT TYPES:
-1. Hamlet (20-100 pop): Small farming/resource extraction clusters
-2. Village (100-500 pop): Agricultural centers, fishing villages
-3. Town (500-5000 pop): Market towns, garrison posts, trade hubs
-4. City (5,000-50,000 pop): Regional capitals, universities, port cities
-5. Metropolis (50,000+ pop): Empire seats, magical academies
-6. Fortress (variable): Military strongholds, border keeps
-7. Monastery (20-200 pop): Religious retreats, scholarly enclaves
+SETTLEMENT HIERARCHY:
+Metropolis → Cities → Towns → Villages → Hamlets
+Fortresses (military) and Monasteries (religious) are special cases
 """
 
 import numpy as np
 from scipy.ndimage import distance_transform_edt, gaussian_filter
-from typing import List, Dict, Tuple, Set
+from typing import List, Dict, Tuple, Set, Optional
 from dataclasses import dataclass
 
 from config import WorldGenerationParams, CHUNK_SIZE, BiomeType, DrainageClass
@@ -38,7 +31,7 @@ class SettlementType:
     METROPOLIS = 4
     FORTRESS = 5
     MONASTERY = 6
-    RUIN = 7  # Abandoned settlement
+    RUIN = 7
 
 
 # Specialization enumeration
@@ -61,13 +54,13 @@ class Settlement:
     y: int
     chunk_x: int
     chunk_y: int
-    settlement_type: int  # SettlementType
+    settlement_type: int
     population: int
-    specialization: int  # SettlementSpecialization
-    age_years: int  # Historical depth
+    specialization: int
+    age_years: int
     is_ruin: bool
-    is_capital: bool  # Regional capital
-    name: str = ""  # Can be generated later
+    is_capital: bool
+    name: str = ""
     
     # Site quality scores
     water_score: float = 0.0
@@ -75,24 +68,50 @@ class Settlement:
     resource_score: float = 0.0
     climate_score: float = 0.0
     access_score: float = 0.0
+    total_score: float = 0.0
+
+
+@dataclass
+class WorldStatistics:
+    """Global statistics for percentile-based scoring."""
+    # Temperature percentiles
+    temp_p05: float
+    temp_p25: float
+    temp_p50: float
+    temp_p75: float
+    temp_p95: float
+    
+    # Precipitation percentiles
+    precip_p05: float
+    precip_p25: float
+    precip_p50: float
+    precip_p75: float
+    precip_p95: float
+    
+    # Elevation percentiles
+    elev_p05: float
+    elev_p25: float
+    elev_p50: float
+    elev_p75: float
+    elev_p95: float
+    
+    # Other ranges
+    max_mineral: float
+    max_mana: float
 
 
 def execute(world_state: WorldState, params: WorldGenerationParams):
     """
-    Generate settlement sites across the world.
-    
-    Args:
-        world_state: World state to update
-        params: Generation parameters
+    Generate settlement sites across the world using improved placement algorithm.
     """
-    print(f"  - Generating settlement sites...")
+    print(f"  - Generating settlement sites (REFACTORED)...")
     
     size = world_state.size
     seed = params.seed
     rng = np.random.default_rng(seed + 16000)
     
-    # STEP 1: Collect global data for site selection
-    print(f"    - Collecting environmental data for site analysis...")
+    # STEP 1: Collect global data
+    print(f"    - Collecting environmental data...")
     
     elevation_global, temp_global, precip_global = collect_climate_data(world_state, size)
     biome_global, agricultural_yield = collect_biome_data(world_state, size)
@@ -103,10 +122,22 @@ def execute(world_state: WorldState, params: WorldGenerationParams):
     
     land_mask = elevation_global > 0
     
-    # STEP 2: Calculate site suitability scores
-    print(f"    - Calculating site suitability scores...")
+    # STEP 2: Calculate world statistics for percentile-based scoring
+    print(f"    - Computing world statistics for adaptive scoring...")
     
-    suitability_scores = calculate_suitability_scores(
+    world_stats = calculate_world_statistics(
+        elevation_global,
+        temp_global,
+        precip_global,
+        mineral_deposits,
+        mana_concentration,
+        land_mask
+    )
+    
+    # STEP 3: Calculate suitability scores using percentiles
+    print(f"    - Calculating percentile-based site suitability scores...")
+    
+    suitability_components = calculate_suitability_scores(
         elevation_global,
         temp_global,
         precip_global,
@@ -117,159 +148,81 @@ def execute(world_state: WorldState, params: WorldGenerationParams):
         soil_quality,
         river_global,
         land_mask,
+        world_stats,
         size
     )
     
-    # STEP 3: Hierarchical settlement placement
-    print(f"    - Placing settlements hierarchically...")
+    suitability_scores = suitability_components['total']
+    
+    # Store debug data for visualization
+    world_state.settlement_debug_data = suitability_components
+    
+    # STEP 4: Hierarchical settlement placement with improved spacing
+    print(f"    - Placing settlements with hierarchical spacing...")
     
     settlements = []
-    occupied_sites = np.zeros((size, size), dtype=bool)
+    occupied_map = np.zeros((size, size), dtype=np.uint8)  # 0 = empty, 1-7 = settlement type
     
-    # Track specialization counts for balanced distribution
     specialization_counts = {spec: 0 for spec in range(8)}
     
-    # Place Metropolises (1-3 for a 512x512 world, scales with size)
-    num_metropolises = max(1, (size // 512) * 2)
-    print(f"      Placing {num_metropolises} metropolises...")
+    # Define settlement targets (scales with world size)
+    scale_factor = (size / 512.0) ** 2  # Area-based scaling
     
-    metropolises = place_settlements_by_type(
+    settlement_targets = {
+        SettlementType.METROPOLIS: max(1, int(2 * scale_factor)),
+        SettlementType.CITY: max(5, int(10 * scale_factor)),
+        SettlementType.TOWN: max(20, int(40 * scale_factor)),
+        SettlementType.VILLAGE: max(60, int(120 * scale_factor)),
+        SettlementType.HAMLET: max(150, int(250 * scale_factor)),
+        SettlementType.FORTRESS: max(8, int(12 * scale_factor)),
+        SettlementType.MONASTERY: max(8, int(12 * scale_factor)),
+    }
+    
+    print(f"      Settlement targets for {size}x{size} world:")
+    for stype, target in settlement_targets.items():
+        print(f"        Type {stype}: {target}")
+    
+    # Place in hierarchical order
+    placement_order = [
         SettlementType.METROPOLIS,
-        num_metropolises,
-        suitability_scores,
-        occupied_sites,
-        land_mask,
-        size,
-        rng,
-        specialization_counts,
-        mana_concentration,
-        mineral_deposits,
-        agricultural_yield,
-        river_global
-    )
-    settlements.extend(metropolises)
-    print(f"        Placed {len(metropolises)} metropolises")
-    
-    # Place Cities (5-15 depending on world size)
-    num_cities = max(5, (size // 512) * 10)
-    print(f"      Placing {num_cities} cities...")
-    
-    cities = place_settlements_by_type(
         SettlementType.CITY,
-        num_cities,
-        suitability_scores,
-        occupied_sites,
-        land_mask,
-        size,
-        rng,
-        specialization_counts,
-        mana_concentration,
-        mineral_deposits,
-        agricultural_yield,
-        river_global
-    )
-    settlements.extend(cities)
-    print(f"        Placed {len(cities)} cities")
-    
-    # Place Towns (30-60)
-    num_towns = max(30, (size // 512) * 40)
-    print(f"      Placing {num_towns} towns...")
-    
-    towns = place_settlements_by_type(
         SettlementType.TOWN,
-        num_towns,
-        suitability_scores,
-        occupied_sites,
-        land_mask,
-        size,
-        rng,
-        specialization_counts,
-        mana_concentration,
-        mineral_deposits,
-        agricultural_yield,
-        river_global
-    )
-    settlements.extend(towns)
-    print(f"        Placed {len(towns)} towns")
-    
-    # Place Villages (100-200)
-    num_villages = max(100, (size // 512) * 150)
-    print(f"      Placing {num_villages} villages...")
-    
-    villages = place_settlements_by_type(
         SettlementType.VILLAGE,
-        num_villages,
-        suitability_scores,
-        occupied_sites,
-        land_mask,
-        size,
-        rng,
-        specialization_counts,
-        mana_concentration,
-        mineral_deposits,
-        agricultural_yield,
-        river_global
-    )
-    settlements.extend(villages)
-    print(f"        Placed {len(villages)} villages")
-    
-    # Place Hamlets (200-400)
-    num_hamlets = max(200, (size // 512) * 300)
-    print(f"      Placing {num_hamlets} hamlets...")
-    
-    hamlets = place_settlements_by_type(
         SettlementType.HAMLET,
-        num_hamlets,
-        suitability_scores,
-        occupied_sites,
-        land_mask,
-        size,
-        rng,
-        specialization_counts,
-        mana_concentration,
-        mineral_deposits,
-        agricultural_yield,
-        river_global
-    )
-    settlements.extend(hamlets)
-    print(f"        Placed {len(hamlets)} hamlets")
+        SettlementType.FORTRESS,
+        SettlementType.MONASTERY,
+    ]
     
-    # Place Fortresses (10-20) - defensive positions
-    num_fortresses = max(10, (size // 512) * 15)
-    print(f"      Placing {num_fortresses} fortresses...")
+    for settlement_type in placement_order:
+        target_count = settlement_targets[settlement_type]
+        
+        type_name = get_settlement_type_name(settlement_type)
+        print(f"      Placing {target_count} {type_name}s...")
+        
+        new_settlements = place_settlements_hierarchical(
+            settlement_type,
+            target_count,
+            suitability_scores,
+            occupied_map,
+            settlements,
+            land_mask,
+            size,
+            rng,
+            specialization_counts,
+            mana_concentration,
+            mineral_deposits,
+            agricultural_yield,
+            river_global,
+            elevation_global
+        )
+        
+        settlements.extend(new_settlements)
+        print(f"        Placed {len(new_settlements)} {type_name}s")
     
-    fortresses = place_fortresses(
-        num_fortresses,
-        elevation_global,
-        occupied_sites,
-        land_mask,
-        settlements,  # Protect existing settlements
-        size,
-        rng
-    )
-    settlements.extend(fortresses)
-    print(f"        Placed {len(fortresses)} fortresses")
-    
-    # Place Monasteries (10-20) - isolated religious sites
-    num_monasteries = max(10, (size // 512) * 15)
-    print(f"      Placing {num_monasteries} monasteries...")
-    
-    monasteries = place_monasteries(
-        num_monasteries,
-        elevation_global,
-        mana_concentration,
-        occupied_sites,
-        land_mask,
-        size,
-        rng
-    )
-    settlements.extend(monasteries)
-    print(f"        Placed {len(monasteries)} monasteries")
-    
-    # STEP 4: Mark some settlements as ruins (10-15%)
+    # STEP 5: Mark ruins
     print(f"    - Marking abandoned settlements as ruins...")
     
-    num_ruins = int(len(settlements) * 0.12)  # 12% ruins
+    num_ruins = int(len(settlements) * 0.12)
     ruin_candidates = [s for s in settlements if s.settlement_type in [
         SettlementType.HAMLET, SettlementType.VILLAGE, SettlementType.TOWN
     ]]
@@ -278,15 +231,14 @@ def execute(world_state: WorldState, params: WorldGenerationParams):
         ruin_indices = rng.choice(len(ruin_candidates), size=num_ruins, replace=False)
         for idx in ruin_indices:
             ruin_candidates[idx].is_ruin = True
-            ruin_candidates[idx].population = 0  # Abandoned
+            ruin_candidates[idx].population = 0
     
     num_actual_ruins = sum(1 for s in settlements if s.is_ruin)
     print(f"        Marked {num_actual_ruins} settlements as ruins")
     
-    # STEP 5: Mark regional capitals (largest city in each region)
+    # STEP 6: Designate regional capitals
     print(f"    - Designating regional capitals...")
     
-    # Group by rough regions (divide world into quadrants/sectors)
     region_size = size // 4
     for region_x in range(4):
         for region_y in range(4):
@@ -299,14 +251,13 @@ def execute(world_state: WorldState, params: WorldGenerationParams):
             ]
             
             if region_settlements:
-                # Mark largest as capital
                 capital = max(region_settlements, key=lambda s: s.population)
                 capital.is_capital = True
     
     num_capitals = sum(1 for s in settlements if s.is_capital)
     print(f"        Designated {num_capitals} regional capitals")
     
-    # STEP 6: Store settlements in chunks
+    # STEP 7: Store in chunks
     print(f"    - Storing settlement data in chunks...")
     
     for chunk_y in range(size // CHUNK_SIZE):
@@ -315,7 +266,6 @@ def execute(world_state: WorldState, params: WorldGenerationParams):
             if chunk is None:
                 continue
             
-            # Find settlements in this chunk
             chunk_settlements = [
                 s for s in settlements
                 if s.chunk_x == chunk_x and s.chunk_y == chunk_y
@@ -323,12 +273,11 @@ def execute(world_state: WorldState, params: WorldGenerationParams):
             
             chunk.settlements = chunk_settlements
     
-    # STEP 7: Generate global settlement map for visualization
+    # STEP 8: Create visualization map
     print(f"    - Creating settlement visualization map...")
     
     settlement_map = create_settlement_map(settlements, size)
     
-    # Store in chunks as settlement_presence array
     for chunk_y in range(size // CHUNK_SIZE):
         for chunk_x in range(size // CHUNK_SIZE):
             chunk = world_state.get_chunk(chunk_x, chunk_y)
@@ -340,53 +289,490 @@ def execute(world_state: WorldState, params: WorldGenerationParams):
             
             chunk.settlement_presence = settlement_map[x_start:x_start+CHUNK_SIZE, y_start:y_start+CHUNK_SIZE]
     
-    # STEP 8: Report statistics
+    # STEP 9: Report statistics
     print(f"  - Settlement generation statistics:")
     print(f"    Total settlements: {len(settlements)}")
     
     type_counts = {}
     for s in settlements:
-        stype = s.settlement_type
-        type_counts[stype] = type_counts.get(stype, 0) + 1
+        type_counts[s.settlement_type] = type_counts.get(s.settlement_type, 0) + 1
     
-    type_names = {
-        SettlementType.HAMLET: "Hamlets",
-        SettlementType.VILLAGE: "Villages",
-        SettlementType.TOWN: "Towns",
-        SettlementType.CITY: "Cities",
-        SettlementType.METROPOLIS: "Metropolises",
-        SettlementType.FORTRESS: "Fortresses",
-        SettlementType.MONASTERY: "Monasteries",
-    }
-    
-    for stype, name in type_names.items():
+    for stype in placement_order:
         count = type_counts.get(stype, 0)
-        print(f"      {name}: {count}")
+        target = settlement_targets[stype]
+        type_name = get_settlement_type_name(stype)
+        print(f"      {type_name}s: {count}/{target} ({count/target*100:.0f}%)")
     
     print(f"      Ruins: {num_actual_ruins}")
     print(f"      Capitals: {num_capitals}")
     
-    print(f"    Specialization distribution:")
-    spec_names = {
-        SettlementSpecialization.AGRICULTURAL: "Agricultural",
-        SettlementSpecialization.MINING: "Mining",
-        SettlementSpecialization.FISHING_PORT: "Fishing/Port",
-        SettlementSpecialization.TRADE_HUB: "Trade Hub",
-        SettlementSpecialization.FORTRESS_MILITARY: "Fortress",
-        SettlementSpecialization.RELIGIOUS: "Religious",
-        SettlementSpecialization.MAGICAL: "Magical",
-        SettlementSpecialization.MANUFACTURING: "Manufacturing",
-    }
-    
-    for spec, name in spec_names.items():
-        count = specialization_counts.get(spec, 0)
-        if count > 0:
-            print(f"      {name}: {count}")
-    
-    # Store settlement list at world level
+    # Store global settlement list
     world_state.settlements = settlements
 
 
+def calculate_world_statistics(
+    elevation,
+    temperature,
+    precipitation,
+    mineral_deposits,
+    mana_concentration,
+    land_mask
+) -> WorldStatistics:
+    """Calculate percentile statistics from land areas only."""
+    
+    # Only use land cells for statistics
+    land_temp = temperature[land_mask]
+    land_precip = precipitation[land_mask]
+    land_elev = elevation[land_mask]
+    
+    return WorldStatistics(
+        # Temperature
+        temp_p05=np.percentile(land_temp, 5),
+        temp_p25=np.percentile(land_temp, 25),
+        temp_p50=np.percentile(land_temp, 50),
+        temp_p75=np.percentile(land_temp, 75),
+        temp_p95=np.percentile(land_temp, 95),
+        
+        # Precipitation
+        precip_p05=np.percentile(land_precip, 5),
+        precip_p25=np.percentile(land_precip, 25),
+        precip_p50=np.percentile(land_precip, 50),
+        precip_p75=np.percentile(land_precip, 75),
+        precip_p95=np.percentile(land_precip, 95),
+        
+        # Elevation
+        elev_p05=np.percentile(land_elev, 5),
+        elev_p25=np.percentile(land_elev, 25),
+        elev_p50=np.percentile(land_elev, 50),
+        elev_p75=np.percentile(land_elev, 75),
+        elev_p95=np.percentile(land_elev, 95),
+        
+        # Other
+        max_mineral=mineral_deposits.max(),
+        max_mana=mana_concentration.max(),
+    )
+
+
+def calculate_suitability_scores(
+    elevation,
+    temperature,
+    precipitation,
+    biome,
+    agricultural_yield,
+    mineral_deposits,
+    mana_concentration,
+    soil_quality,
+    river,
+    land_mask,
+    world_stats: WorldStatistics,
+    size
+) -> Dict[str, np.ndarray]:
+    """
+    Calculate site suitability using percentile-based scoring.
+    Returns dict with component scores for debugging.
+    """
+    
+    # Initialize score components
+    water_score = np.zeros((size, size), dtype=np.float32)
+    defense_score = np.zeros((size, size), dtype=np.float32)
+    resource_score = np.zeros((size, size), dtype=np.float32)
+    climate_score = np.zeros((size, size), dtype=np.float32)
+    access_score = np.zeros((size, size), dtype=np.float32)
+    
+    # WATER ACCESS (30%) - Distance to rivers
+    print(f"        Water access...")
+    distance_to_water = distance_transform_edt(~river)
+    water_score = np.exp(-distance_to_water / 50.0)
+    
+    # DEFENSIBILITY (20%) - Hills but not mountains, moderate slope
+    print(f"        Defensibility...")
+    from utils.spatial import calculate_slope
+    slope = calculate_slope(elevation)
+    
+    # Ideal elevation: 25th-75th percentile (moderate hills)
+    elev_defense = np.zeros_like(elevation)
+    elev_defense[(elevation >= world_stats.elev_p25) & (elevation < world_stats.elev_p50)] = 0.7
+    elev_defense[(elevation >= world_stats.elev_p50) & (elevation < world_stats.elev_p75)] = 1.0
+    elev_defense[(elevation >= world_stats.elev_p75) & (elevation < world_stats.elev_p95)] = 0.6
+    elev_defense[elevation < world_stats.elev_p25] = 0.3
+    elev_defense[elevation >= world_stats.elev_p95] = 0.2
+    
+    # Moderate slope is good
+    slope_defense = np.where(slope < 0.15, 1.0, np.exp(-slope / 0.2))
+    
+    defense_score = (elev_defense + slope_defense) / 2.0
+    
+    # RESOURCES (25%) - Agriculture, minerals, soil
+    print(f"        Resources...")
+    # Normalize mineral deposits
+    mineral_norm = mineral_deposits / (world_stats.max_mineral + 1e-6)
+    mineral_norm = np.clip(mineral_norm, 0, 1)
+    
+    resource_score = (
+        agricultural_yield * 0.5 +
+        mineral_norm * 0.3 +
+        soil_quality * 0.2
+    )
+    
+    # CLIMATE (15%) - Moderate temperature and precipitation (25th-75th percentile)
+    print(f"        Climate...")
+    
+    # Temperature: ideal in 25th-75th percentile
+    temp_score = np.zeros_like(temperature)
+    temp_score[(temperature >= world_stats.temp_p25) & (temperature <= world_stats.temp_p75)] = 1.0
+    temp_score[(temperature >= world_stats.temp_p05) & (temperature < world_stats.temp_p25)] = 0.6
+    temp_score[(temperature > world_stats.temp_p75) & (temperature <= world_stats.temp_p95)] = 0.6
+    temp_score[temperature < world_stats.temp_p05] = 0.2
+    temp_score[temperature > world_stats.temp_p95] = 0.3
+    
+    # Precipitation: ideal in 25th-75th percentile
+    precip_score = np.zeros_like(precipitation)
+    precip_score[(precipitation >= world_stats.precip_p25) & (precipitation <= world_stats.precip_p75)] = 1.0
+    precip_score[(precipitation >= world_stats.precip_p05) & (precipitation < world_stats.precip_p25)] = 0.5
+    precip_score[(precipitation > world_stats.precip_p75) & (precipitation <= world_stats.precip_p95)] = 0.7
+    precip_score[precipitation < world_stats.precip_p05] = 0.2
+    precip_score[precipitation > world_stats.precip_p95] = 0.4
+    
+    climate_score = (temp_score + precip_score) / 2.0
+    
+    # ACCESSIBILITY (10%) - Flat terrain, water access
+    print(f"        Accessibility...")
+    flat_score = np.where(slope < 0.1, 1.0, np.exp(-slope / 0.2))
+    river_access = np.exp(-distance_to_water / 100.0)
+    
+    access_score = (flat_score + river_access) / 2.0
+    
+    # COMBINE with weights
+    total_score = (
+        water_score * 0.30 +
+        defense_score * 0.20 +
+        resource_score * 0.25 +
+        climate_score * 0.15 +
+        access_score * 0.10
+    )
+    
+    # Apply land mask
+    total_score[~land_mask] = 0
+    water_score[~land_mask] = 0
+    defense_score[~land_mask] = 0
+    resource_score[~land_mask] = 0
+    climate_score[~land_mask] = 0
+    access_score[~land_mask] = 0
+    
+    # Smooth slightly
+    total_score = gaussian_filter(total_score, sigma=2.0)
+    
+    return {
+        'total': total_score,
+        'water': water_score,
+        'defense': defense_score,
+        'resource': resource_score,
+        'climate': climate_score,
+        'access': access_score,
+    }
+
+
+def place_settlements_hierarchical(
+    settlement_type: int,
+    target_count: int,
+    suitability_scores: np.ndarray,
+    occupied_map: np.ndarray,
+    existing_settlements: List[Settlement],
+    land_mask: np.ndarray,
+    size: int,
+    rng: np.random.Generator,
+    specialization_counts: Dict[int, int],
+    mana_concentration: np.ndarray,
+    mineral_deposits: np.ndarray,
+    agricultural_yield: np.ndarray,
+    river: np.ndarray,
+    elevation: np.ndarray
+) -> List[Settlement]:
+    """
+    Place settlements with hierarchical spacing rules.
+    
+    Key insight: Different types can be closer together.
+    - Cities must be far from other cities
+    - Villages can be near cities, but not near other villages
+    - Hamlets can be near villages/cities, but not near other hamlets
+    """
+    
+    settlements = []
+    
+    # Spacing rules
+    spacing_rules = {
+        SettlementType.METROPOLIS: {
+            'same_type': 200,    # Far from other metropolises
+            'larger_type': 200,  # N/A (largest type)
+        },
+        SettlementType.CITY: {
+            'same_type': 100,    # Far from other cities
+            'larger_type': 120,  # Distance from metropolises
+        },
+        SettlementType.TOWN: {
+            'same_type': 50,     # Moderate distance from towns
+            'larger_type': 30,   # Can be near cities
+        },
+        SettlementType.VILLAGE: {
+            'same_type': 25,     # Close spacing between villages
+            'larger_type': 15,   # Can be close to towns/cities
+        },
+        SettlementType.HAMLET: {
+            'same_type': 12,     # Very close spacing
+            'larger_type': 8,    # Very close to villages
+        },
+        SettlementType.FORTRESS: {
+            'same_type': 80,     # Spread out fortresses
+            'larger_type': 30,   # Can be near cities
+        },
+        SettlementType.MONASTERY: {
+            'same_type': 100,    # Isolated monasteries
+            'larger_type': 50,   # Away from settlements
+        },
+    }
+    
+    rules = spacing_rules[settlement_type]
+    same_type_spacing = rules['same_type']
+    larger_type_spacing = rules['larger_type']
+    
+    # Population ranges
+    pop_ranges = {
+        SettlementType.METROPOLIS: (50000, 100000),
+        SettlementType.CITY: (5000, 50000),
+        SettlementType.TOWN: (500, 5000),
+        SettlementType.VILLAGE: (100, 500),
+        SettlementType.HAMLET: (20, 100),
+        SettlementType.FORTRESS: (50, 500),
+        SettlementType.MONASTERY: (20, 200),
+    }
+    
+    pop_min, pop_max = pop_ranges[settlement_type]
+    
+    # Try to place settlements
+    attempts = 0
+    max_attempts = target_count * 20
+    
+    while len(settlements) < target_count and attempts < max_attempts:
+        attempts += 1
+        
+        # Find available high-quality sites
+        available_scores = suitability_scores.copy()
+        available_scores[occupied_map > 0] *= 0.5  # Penalize already occupied, but don't eliminate
+        
+        # Special logic for fortresses (prefer high ground)
+        if settlement_type == SettlementType.FORTRESS:
+            available_scores *= (elevation / elevation.max()) * 2.0
+        
+        # Special logic for monasteries (prefer isolation + high mana)
+        if settlement_type == SettlementType.MONASTERY:
+            distance_from_occupied = distance_transform_edt(occupied_map == 0)
+            isolation = np.clip(distance_from_occupied / 100.0, 0, 1)
+            available_scores *= isolation * 2.0
+            available_scores *= (mana_concentration + 0.5)
+        
+        if available_scores.max() < 0.05:
+            break
+        
+        # Pick from top candidates
+        threshold = available_scores.max() * 0.6
+        candidates = np.argwhere(available_scores > threshold)
+        
+        if len(candidates) == 0:
+            break
+        
+        idx = rng.integers(0, len(candidates))
+        x, y = candidates[idx]
+        
+        # Check spacing constraints
+        valid_placement = True
+        
+        # Check distance to same type
+        for s in existing_settlements:
+            if s.settlement_type == settlement_type:
+                dist = np.sqrt((s.x - x)**2 + (s.y - y)**2)
+                if dist < same_type_spacing:
+                    valid_placement = False
+                    break
+        
+        if not valid_placement:
+            # Mark this area as checked
+            occupied_map[max(0, x-same_type_spacing//2):min(size, x+same_type_spacing//2),
+                        max(0, y-same_type_spacing//2):min(size, y+same_type_spacing//2)] = 255
+            continue
+        
+        # Check distance to larger settlements (if applicable)
+        if settlement_type != SettlementType.METROPOLIS:
+            for s in existing_settlements:
+                if s.settlement_type > settlement_type:  # Larger settlements
+                    dist = np.sqrt((s.x - x)**2 + (s.y - y)**2)
+                    if dist < larger_type_spacing:
+                        valid_placement = False
+                        break
+        
+        if not valid_placement:
+            occupied_map[max(0, x-larger_type_spacing//2):min(size, x+larger_type_spacing//2),
+                        max(0, y-larger_type_spacing//2):min(size, y+larger_type_spacing//2)] = 255
+            continue
+        
+        # Valid placement - create settlement
+        specialization = determine_specialization(
+            x, y,
+            mana_concentration,
+            mineral_deposits,
+            agricultural_yield,
+            river,
+            settlement_type,
+            specialization_counts,
+            rng
+        )
+        
+        population = rng.integers(pop_min, pop_max)
+        
+        age_base = {
+            SettlementType.METROPOLIS: 800,
+            SettlementType.CITY: 500,
+            SettlementType.TOWN: 300,
+            SettlementType.VILLAGE: 150,
+            SettlementType.HAMLET: 50,
+            SettlementType.FORTRESS: 200,
+            SettlementType.MONASTERY: 300,
+        }
+        
+        age = int(rng.normal(age_base.get(settlement_type, 100), 50))
+        age = max(10, age)
+        
+        chunk_x = x // CHUNK_SIZE
+        chunk_y = y // CHUNK_SIZE
+        
+        settlement = Settlement(
+            settlement_id=len(existing_settlements) + len(settlements),
+            x=x,
+            y=y,
+            chunk_x=chunk_x,
+            chunk_y=chunk_y,
+            settlement_type=settlement_type,
+            population=population,
+            specialization=specialization,
+            age_years=age,
+            is_ruin=False,
+            is_capital=False,
+            total_score=suitability_scores[x, y],
+        )
+        
+        settlements.append(settlement)
+        
+        # Mark as occupied (type-specific)
+        occupied_map[x, y] = settlement_type + 1
+        
+        # Mark influence zone (smaller radius for smaller settlements)
+        influence_radius = same_type_spacing // 3
+        occupied_map[max(0, x-influence_radius):min(size, x+influence_radius),
+                    max(0, y-influence_radius):min(size, y+influence_radius)] = settlement_type + 1
+    
+    return settlements
+
+
+def determine_specialization(
+    x, y,
+    mana_concentration,
+    mineral_deposits,
+    agricultural_yield,
+    river,
+    settlement_type,
+    specialization_counts,
+    rng
+):
+    """Determine settlement specialization based on local resources."""
+    
+    mana = mana_concentration[x, y]
+    minerals = mineral_deposits[x, y]
+    agriculture = agricultural_yield[x, y]
+    has_river = river[x, y]
+    
+    scores = {}
+    
+    scores[SettlementSpecialization.AGRICULTURAL] = agriculture * 2.0
+    scores[SettlementSpecialization.MINING] = minerals * 3.0
+    scores[SettlementSpecialization.FISHING_PORT] = 1.0 if has_river else 0.1
+    scores[SettlementSpecialization.TRADE_HUB] = (
+        (1.0 if has_river else 0.3) * (agriculture + minerals + mana) / 3.0
+    )
+    scores[SettlementSpecialization.FORTRESS_MILITARY] = 0.3
+    scores[SettlementSpecialization.RELIGIOUS] = 0.5
+    scores[SettlementSpecialization.MAGICAL] = mana * 3.0
+    scores[SettlementSpecialization.MANUFACTURING] = (
+        minerals * 1.5 + (1.0 if has_river else 0.3)
+    )
+    
+    if settlement_type == SettlementType.FORTRESS:
+        return SettlementSpecialization.FORTRESS_MILITARY
+    
+    if settlement_type == SettlementType.MONASTERY:
+        return SettlementSpecialization.RELIGIOUS
+    
+    # Balance specializations
+    total_placed = sum(specialization_counts.values())
+    if total_placed > 0:
+        for spec in scores:
+            current_ratio = specialization_counts.get(spec, 0) / total_placed
+            target_ratio = 1.0 / 8.0
+            
+            if current_ratio < target_ratio:
+                scores[spec] *= 1.5
+            elif current_ratio > target_ratio * 1.5:
+                scores[spec] *= 0.7
+    
+    valid_specs = [s for s, score in scores.items() if score > 0.1]
+    
+    if not valid_specs:
+        specialization = SettlementSpecialization.AGRICULTURAL
+    else:
+        spec_weights = np.array([scores[s] for s in valid_specs])
+        spec_weights = spec_weights / spec_weights.sum()
+        specialization = rng.choice(valid_specs, p=spec_weights)
+    
+    specialization_counts[specialization] = specialization_counts.get(specialization, 0) + 1
+    
+    return specialization
+
+
+def get_settlement_type_name(settlement_type: int) -> str:
+    """Get human-readable name for settlement type."""
+    names = {
+        SettlementType.HAMLET: "Hamlet",
+        SettlementType.VILLAGE: "Village",
+        SettlementType.TOWN: "Town",
+        SettlementType.CITY: "City",
+        SettlementType.METROPOLIS: "Metropolis",
+        SettlementType.FORTRESS: "Fortress",
+        SettlementType.MONASTERY: "Monastery",
+    }
+    return names.get(settlement_type, "Unknown")
+
+
+def create_settlement_map(settlements: List[Settlement], size: int) -> np.ndarray:
+    """Create visualization map of settlement types."""
+    settlement_map = np.zeros((size, size), dtype=np.uint8)
+    
+    for s in settlements:
+        if s.is_ruin:
+            value = 8
+        else:
+            value = s.settlement_type + 1
+        
+        # Mark area based on settlement size
+        radius = 1 if s.settlement_type <= SettlementType.VILLAGE else 2
+        
+        for dx in range(-radius, radius + 1):
+            for dy in range(-radius, radius + 1):
+                nx, ny = s.x + dx, s.y + dy
+                if 0 <= nx < size and 0 <= ny < size:
+                    settlement_map[nx, ny] = value
+    
+    return settlement_map
+
+
+# Data collection functions (unchanged from original)
 def collect_climate_data(world_state, size):
     """Collect temperature and precipitation data."""
     elevation = np.zeros((size, size), dtype=np.float32)
@@ -453,7 +839,6 @@ def collect_resource_data(world_state, size):
             x_start = chunk_x * CHUNK_SIZE
             y_start = chunk_y * CHUNK_SIZE
             
-            # Sum all mineral deposits
             if chunk.mineral_deposits is not None:
                 for mineral, deposit_map in chunk.mineral_deposits.items():
                     minerals[x_start:x_start+CHUNK_SIZE, y_start:y_start+CHUNK_SIZE] += deposit_map
@@ -483,7 +868,7 @@ def collect_magic_data(world_state, size):
 
 
 def collect_soil_data(world_state, size):
-    """Collect soil quality data (pH and drainage)."""
+    """Collect soil quality data."""
     soil_quality = np.zeros((size, size), dtype=np.float32)
     
     num_chunks = size // CHUNK_SIZE
@@ -497,14 +882,10 @@ def collect_soil_data(world_state, size):
             x_start = chunk_x * CHUNK_SIZE
             y_start = chunk_y * CHUNK_SIZE
             
-            # Combine soil pH (optimal 6-7.5) and drainage
             if chunk.soil_ph is not None and chunk.soil_drainage is not None:
-                # pH quality: closer to 6.5-7 is better
                 ph_quality = 1.0 - np.abs(chunk.soil_ph - 6.75) / 3.0
                 ph_quality = np.clip(ph_quality, 0, 1)
                 
-                # Drainage quality: well-drained is best
-                from config import DrainageClass
                 drainage_quality = np.zeros_like(chunk.soil_drainage, dtype=np.float32)
                 drainage_quality[chunk.soil_drainage == DrainageClass.WELL] = 1.0
                 drainage_quality[chunk.soil_drainage == DrainageClass.MODERATELY_WELL] = 0.9
@@ -535,556 +916,3 @@ def collect_hydrology_data(world_state, size):
                 rivers[x_start:x_start+CHUNK_SIZE, y_start:y_start+CHUNK_SIZE] = chunk.river_presence
     
     return rivers
-
-
-def calculate_suitability_scores(
-    elevation,
-    temperature,
-    precipitation,
-    biome,
-    agricultural_yield,
-    mineral_deposits,
-    mana_concentration,
-    soil_quality,
-    river,
-    land_mask,
-    size
-):
-    """
-    Calculate site suitability scores for settlements.
-    
-    Weighted factors:
-    - Water access (30%)
-    - Defensibility (20%)
-    - Resources (25%)
-    - Climate (15%)
-    - Accessibility (10%)
-    """
-    suitability = np.zeros((size, size), dtype=np.float32)
-    
-    # Water access score (30%) - distance to river
-    print(f"        Calculating water access scores...")
-    distance_to_water = distance_transform_edt(~river)
-    water_score = np.exp(-distance_to_water / 50.0)  # Within ~5km is ideal
-    
-    # Defensibility score (20%) - elevation advantage, not too steep
-    print(f"        Calculating defensibility scores...")
-    from utils.spatial import calculate_slope
-    slope = calculate_slope(elevation)
-    
-    # Hills are defensible, mountains are not
-    elevation_defense = np.zeros_like(elevation)
-    elevation_defense[elevation > 50] = 0.3
-    elevation_defense[elevation > 200] = 0.7
-    elevation_defense[elevation > 500] = 1.0
-    elevation_defense[elevation > 1500] = 0.6  # Too high
-    elevation_defense[elevation > 2500] = 0.2  # Mountains
-    
-    # Not too steep
-    slope_defense = np.where(slope < 0.15, 1.0, 0.5)
-    
-    defense_score = (elevation_defense + slope_defense) / 2.0
-    
-    # Resource score (25%) - agricultural + minerals + soil quality
-    print(f"        Calculating resource scores...")
-    resource_score = (
-        agricultural_yield * 0.5 +
-        np.clip(mineral_deposits * 2.0, 0, 1) * 0.3 +
-        soil_quality * 0.2
-    )
-    
-    # Climate score (15%) - moderate temperature, adequate rainfall
-    print(f"        Calculating climate scores...")
-    temp_ideal = np.zeros_like(temperature)
-    temp_ideal[(temperature >= 5) & (temperature <= 25)] = 1.0
-    temp_ideal[(temperature >= 0) & (temperature < 5)] = 0.6
-    temp_ideal[(temperature > 25) & (temperature <= 30)] = 0.6
-    temp_ideal[temperature < 0] = 0.3
-    temp_ideal[temperature > 30] = 0.3
-    
-    precip_ideal = np.zeros_like(precipitation)
-    precip_ideal[(precipitation >= 400) & (precipitation <= 1500)] = 1.0
-    precip_ideal[(precipitation >= 250) & (precipitation < 400)] = 0.6
-    precip_ideal[(precipitation > 1500) & (precipitation <= 2000)] = 0.7
-    precip_ideal[precipitation < 250] = 0.2
-    precip_ideal[precipitation > 2000] = 0.5
-    
-    climate_score = (temp_ideal + precip_ideal) / 2.0
-    
-    # Accessibility score (10%) - flat terrain, near water for trade
-    print(f"        Calculating accessibility scores...")
-    flat_score = np.where(slope < 0.1, 1.0, np.exp(-slope / 0.2))
-    river_access = np.exp(-distance_to_water / 100.0)
-    
-    access_score = (flat_score + river_access) / 2.0
-    
-    # Combine weighted scores
-    suitability = (
-        water_score * 0.30 +
-        defense_score * 0.20 +
-        resource_score * 0.25 +
-        climate_score * 0.15 +
-        access_score * 0.10
-    )
-    
-    # Apply land mask (no settlements in ocean)
-    suitability[~land_mask] = 0
-    
-    # Smooth suitability slightly
-    suitability = gaussian_filter(suitability, sigma=2.0)
-    
-    return suitability
-
-
-def place_settlements_by_type(
-    settlement_type,
-    target_count,
-    suitability_scores,
-    occupied_sites,
-    land_mask,
-    size,
-    rng,
-    specialization_counts,
-    mana_concentration,
-    mineral_deposits,
-    agricultural_yield,
-    river
-):
-    """Place settlements of a specific type using competitive inhibition."""
-    settlements = []
-    
-    # Minimum spacing based on settlement type
-    min_spacing = {
-        SettlementType.METROPOLIS: 150,
-        SettlementType.CITY: 80,
-        SettlementType.TOWN: 40,
-        SettlementType.VILLAGE: 20,
-        SettlementType.HAMLET: 10,
-    }
-    
-    spacing = min_spacing.get(settlement_type, 20)
-    
-    # Population ranges
-    pop_ranges = {
-        SettlementType.METROPOLIS: (50000, 100000),
-        SettlementType.CITY: (5000, 50000),
-        SettlementType.TOWN: (500, 5000),
-        SettlementType.VILLAGE: (100, 500),
-        SettlementType.HAMLET: (20, 100),
-    }
-    
-    pop_min, pop_max = pop_ranges.get(settlement_type, (100, 500))
-    
-    attempts = 0
-    max_attempts = target_count * 10
-    
-    while len(settlements) < target_count and attempts < max_attempts:
-        attempts += 1
-        
-        # Find best available site
-        available_scores = suitability_scores.copy()
-        available_scores[occupied_sites] = 0
-        
-        if available_scores.max() < 0.1:
-            break  # No more good sites
-        
-        # Add some randomness to avoid always picking absolute best
-        threshold = available_scores.max() * 0.7
-        candidates = np.argwhere(available_scores > threshold)
-        
-        if len(candidates) == 0:
-            break
-        
-        # Pick random from top candidates
-        idx = rng.integers(0, len(candidates))
-        x, y = candidates[idx]
-        
-        # Check minimum spacing from existing settlements
-        too_close = False
-        for s in settlements:
-            dist = np.sqrt((s.x - x)**2 + (s.y - y)**2)
-            if dist < spacing:
-                too_close = True
-                break
-        
-        if too_close:
-            # Mark this spot as occupied to avoid repeated checks
-            occupied_sites[max(0, x-spacing//2):min(size, x+spacing//2),
-                          max(0, y-spacing//2):min(size, y+spacing//2)] = True
-            continue
-        
-        # Determine specialization based on local resources
-        specialization = determine_specialization(
-            x, y,
-            mana_concentration,
-            mineral_deposits,
-            agricultural_yield,
-            river,
-            settlement_type,
-            specialization_counts,
-            rng
-        )
-        
-        # Generate population
-        population = rng.integers(pop_min, pop_max)
-        
-        # Generate age (older settlements for larger types)
-        age_base = {
-            SettlementType.METROPOLIS: 800,
-            SettlementType.CITY: 500,
-            SettlementType.TOWN: 300,
-            SettlementType.VILLAGE: 150,
-            SettlementType.HAMLET: 50,
-        }
-        
-        age = int(rng.normal(age_base.get(settlement_type, 100), 50))
-        age = max(10, age)
-        
-        # Create settlement
-        chunk_x = x // CHUNK_SIZE
-        chunk_y = y // CHUNK_SIZE
-        
-        settlement = Settlement(
-            settlement_id=len(settlements),
-            x=x,
-            y=y,
-            chunk_x=chunk_x,
-            chunk_y=chunk_y,
-            settlement_type=settlement_type,
-            population=population,
-            specialization=specialization,
-            age_years=age,
-            is_ruin=False,
-            is_capital=False,
-            water_score=suitability_scores[x, y],  # Store for reference
-        )
-        
-        settlements.append(settlement)
-        
-        # Mark surrounding area as occupied
-        occupied_sites[max(0, x-spacing):min(size, x+spacing),
-                      max(0, y-spacing):min(size, y+spacing)] = True
-    
-    return settlements
-
-
-def determine_specialization(
-    x, y,
-    mana_concentration,
-    mineral_deposits,
-    agricultural_yield,
-    river,
-    settlement_type,
-    specialization_counts,
-    rng
-):
-    """Determine settlement specialization based on local resources and balance."""
-    
-    # Get local values
-    mana = mana_concentration[x, y]
-    minerals = mineral_deposits[x, y]
-    agriculture = agricultural_yield[x, y]
-    has_river = river[x, y]
-    
-    # Calculate scores for each specialization
-    scores = {}
-    
-    # Agricultural - needs good farmland
-    scores[SettlementSpecialization.AGRICULTURAL] = agriculture * 2.0
-    
-    # Mining - needs mineral deposits
-    scores[SettlementSpecialization.MINING] = minerals * 3.0
-    
-    # Fishing/Port - needs water access
-    scores[SettlementSpecialization.FISHING_PORT] = 1.0 if has_river else 0.1
-    
-    # Trade Hub - benefits from water + moderate everything
-    scores[SettlementSpecialization.TRADE_HUB] = (
-        (1.0 if has_river else 0.3) * (agriculture + minerals + mana) / 3.0
-    )
-    
-    # Fortress - military specialization (assigned separately)
-    scores[SettlementSpecialization.FORTRESS_MILITARY] = 0.3
-    
-    # Religious - benefits from isolation/beauty
-    scores[SettlementSpecialization.RELIGIOUS] = 0.5
-    
-    # Magical - needs high mana
-    scores[SettlementSpecialization.MAGICAL] = mana * 3.0
-    
-    # Manufacturing - needs minerals + water
-    scores[SettlementSpecialization.MANUFACTURING] = (
-        minerals * 1.5 + (1.0 if has_river else 0.3)
-    )
-    
-    # Fortresses and monasteries get specific specializations
-    if settlement_type == SettlementType.FORTRESS:
-        return SettlementSpecialization.FORTRESS_MILITARY
-    
-    if settlement_type == SettlementType.MONASTERY:
-        return SettlementSpecialization.RELIGIOUS
-    
-    # Balance specializations - boost underrepresented types
-    total_placed = sum(specialization_counts.values())
-    if total_placed > 0:
-        for spec in scores:
-            current_ratio = specialization_counts.get(spec, 0) / total_placed
-            target_ratio = 1.0 / 8.0  # Aim for 12.5% each
-            
-            if current_ratio < target_ratio:
-                # Boost underrepresented
-                scores[spec] *= 1.5
-            elif current_ratio > target_ratio * 1.5:
-                # Reduce overrepresented
-                scores[spec] *= 0.7
-    
-    # Pick specialization weighted by scores
-    valid_specs = [s for s, score in scores.items() if score > 0.1]
-    
-    if not valid_specs:
-        # Fallback to agricultural
-        specialization = SettlementSpecialization.AGRICULTURAL
-    else:
-        spec_weights = np.array([scores[s] for s in valid_specs])
-        spec_weights = spec_weights / spec_weights.sum()
-        
-        specialization = rng.choice(valid_specs, p=spec_weights)
-    
-    # Update count
-    specialization_counts[specialization] = specialization_counts.get(specialization, 0) + 1
-    
-    return specialization
-
-
-def place_fortresses(
-    target_count,
-    elevation,
-    occupied_sites,
-    land_mask,
-    existing_settlements,
-    size,
-    rng
-):
-    """Place fortresses at strategic defensive positions."""
-    fortresses = []
-    
-    # Fortresses prefer:
-    # - High ground (defensibility)
-    # - Near borders (implied by distance from other settlements)
-    # - Mountain passes, river crossings, strategic chokepoints
-    
-    from utils.spatial import calculate_slope
-    slope = calculate_slope(elevation)
-    
-    # Calculate strategic value
-    strategic_value = np.zeros((size, size), dtype=np.float32)
-    
-    # High elevation is good
-    strategic_value[elevation > 500] += 0.5
-    strategic_value[elevation > 1000] += 0.3
-    
-    # Not too steep
-    strategic_value[slope > 0.3] -= 0.5
-    
-    # Near existing settlements (to protect them)
-    for settlement in existing_settlements:
-        if settlement.settlement_type in [SettlementType.CITY, SettlementType.METROPOLIS]:
-            # Create protection zone around cities
-            dist_map = np.sqrt((np.arange(size)[:, None] - settlement.x)**2 +
-                              (np.arange(size)[None, :] - settlement.y)**2)
-            
-            # Ideal distance: 30-80 cells from city
-            protection_value = np.zeros_like(dist_map)
-            protection_value[(dist_map > 30) & (dist_map < 80)] = 1.0
-            protection_value[(dist_map > 20) & (dist_map <= 30)] = 0.7
-            
-            strategic_value += protection_value * 0.5
-    
-    strategic_value[~land_mask] = 0
-    strategic_value[occupied_sites] = 0
-    
-    # Place fortresses
-    min_spacing = 60
-    attempts = 0
-    max_attempts = target_count * 10
-    
-    while len(fortresses) < target_count and attempts < max_attempts:
-        attempts += 1
-        
-        if strategic_value.max() < 0.1:
-            break
-        
-        # Pick high-value location
-        threshold = strategic_value.max() * 0.6
-        candidates = np.argwhere(strategic_value > threshold)
-        
-        if len(candidates) == 0:
-            break
-        
-        idx = rng.integers(0, len(candidates))
-        x, y = candidates[idx]
-        
-        # Check spacing from other fortresses
-        too_close = False
-        for f in fortresses:
-            dist = np.sqrt((f.x - x)**2 + (f.y - y)**2)
-            if dist < min_spacing:
-                too_close = True
-                break
-        
-        if too_close:
-            strategic_value[max(0, x-min_spacing//2):min(size, x+min_spacing//2),
-                           max(0, y-min_spacing//2):min(size, y+min_spacing//2)] = 0
-            continue
-        
-        # Create fortress
-        population = rng.integers(50, 500)  # Variable garrison size
-        age = rng.integers(100, 600)
-        
-        chunk_x = x // CHUNK_SIZE
-        chunk_y = y // CHUNK_SIZE
-        
-        fortress = Settlement(
-            settlement_id=len(existing_settlements) + len(fortresses),
-            x=x,
-            y=y,
-            chunk_x=chunk_x,
-            chunk_y=chunk_y,
-            settlement_type=SettlementType.FORTRESS,
-            population=population,
-            specialization=SettlementSpecialization.FORTRESS_MILITARY,
-            age_years=age,
-            is_ruin=False,
-            is_capital=False,
-        )
-        
-        fortresses.append(fortress)
-        
-        # Mark as occupied
-        occupied_sites[max(0, x-min_spacing):min(size, x+min_spacing),
-                      max(0, y-min_spacing):min(size, y+min_spacing)] = True
-        strategic_value[max(0, x-min_spacing):min(size, x+min_spacing),
-                       max(0, y-min_spacing):min(size, y+min_spacing)] = 0
-    
-    return fortresses
-
-
-def place_monasteries(
-    target_count,
-    elevation,
-    mana_concentration,
-    occupied_sites,
-    land_mask,
-    size,
-    rng
-):
-    """Place monasteries in isolated, spiritually significant locations."""
-    monasteries = []
-    
-    # Monasteries prefer:
-    # - Isolation (far from other settlements)
-    # - High mana concentration (spiritual energy)
-    # - Moderate elevation (mountains or forests)
-    
-    spiritual_value = np.zeros((size, size), dtype=np.float32)
-    
-    # High mana is attractive
-    spiritual_value += mana_concentration * 0.6
-    
-    # Moderate to high elevation
-    spiritual_value[(elevation > 300) & (elevation < 2000)] += 0.4
-    
-    # Isolation bonus (far from occupied sites)
-    distance_from_settlements = distance_transform_edt(~occupied_sites)
-    isolation = np.clip(distance_from_settlements / 100.0, 0, 1)
-    spiritual_value += isolation * 0.5
-    
-    spiritual_value[~land_mask] = 0
-    spiritual_value[occupied_sites] = 0
-    
-    # Place monasteries
-    min_spacing = 80
-    attempts = 0
-    max_attempts = target_count * 10
-    
-    while len(monasteries) < target_count and attempts < max_attempts:
-        attempts += 1
-        
-        if spiritual_value.max() < 0.1:
-            break
-        
-        threshold = spiritual_value.max() * 0.7
-        candidates = np.argwhere(spiritual_value > threshold)
-        
-        if len(candidates) == 0:
-            break
-        
-        idx = rng.integers(0, len(candidates))
-        x, y = candidates[idx]
-        
-        # Check spacing
-        too_close = False
-        for m in monasteries:
-            dist = np.sqrt((m.x - x)**2 + (m.y - y)**2)
-            if dist < min_spacing:
-                too_close = True
-                break
-        
-        if too_close:
-            spiritual_value[max(0, x-min_spacing//2):min(size, x+min_spacing//2),
-                           max(0, y-min_spacing//2):min(size, y+min_spacing//2)] = 0
-            continue
-        
-        # Create monastery
-        population = rng.integers(20, 200)
-        age = rng.integers(50, 800)
-        
-        chunk_x = x // CHUNK_SIZE
-        chunk_y = y // CHUNK_SIZE
-        
-        monastery = Settlement(
-            settlement_id=1000000 + len(monasteries),  # Use high IDs to distinguish
-            x=x,
-            y=y,
-            chunk_x=chunk_x,
-            chunk_y=chunk_y,
-            settlement_type=SettlementType.MONASTERY,
-            population=population,
-            specialization=SettlementSpecialization.RELIGIOUS,
-            age_years=age,
-            is_ruin=False,
-            is_capital=False,
-        )
-        
-        monasteries.append(monastery)
-        
-        # Mark as occupied
-        occupied_sites[max(0, x-min_spacing):min(size, x+min_spacing),
-                      max(0, y-min_spacing):min(size, y+min_spacing)] = True
-        spiritual_value[max(0, x-min_spacing):min(size, x+min_spacing),
-                       max(0, y-min_spacing):min(size, y+min_spacing)] = 0
-    
-    return monasteries
-
-
-def create_settlement_map(settlements, size):
-    """Create a visualization map of settlement types."""
-    settlement_map = np.zeros((size, size), dtype=np.uint8)
-    
-    for s in settlements:
-        # Map settlement type to visualization value
-        if s.is_ruin:
-            value = 8  # Ruins
-        else:
-            value = s.settlement_type + 1  # 1-7 for living settlements
-        
-        # Mark a small area around settlement (3x3 or 5x5 based on size)
-        radius = 1 if s.settlement_type <= SettlementType.VILLAGE else 2
-        
-        for dx in range(-radius, radius + 1):
-            for dy in range(-radius, radius + 1):
-                nx, ny = s.x + dx, s.y + dy
-                if 0 <= nx < size and 0 <= ny < size:
-                    settlement_map[nx, ny] = value
-    
-    return settlement_map

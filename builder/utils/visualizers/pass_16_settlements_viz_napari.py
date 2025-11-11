@@ -1,6 +1,6 @@
 """
-World Builder - Pass 16: Settlement Sites Napari Visualization
-Interactive visualization of settlement locations, types, and specializations
+World Builder - Pass 16: Settlement Sites Napari Visualization (ENHANCED)
+Interactive visualization with debug layers for suitability analysis
 """
 
 import numpy as np
@@ -8,9 +8,15 @@ from typing import Optional
 
 from .base_napari_visualizer import BaseNapariVisualizer, NAPARI_AVAILABLE
 
+try:
+    import matplotlib.pyplot as plt
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
+
 
 class Pass16SettlementsNapariVisualizer(BaseNapariVisualizer):
-    """Napari visualizer for settlement sites."""
+    """Enhanced napari visualizer for settlement sites with debug layers."""
     
     def __init__(self):
         super().__init__(pass_number=16, pass_name="Settlement Sites")
@@ -22,7 +28,7 @@ class Pass16SettlementsNapariVisualizer(BaseNapariVisualizer):
         default_visible: bool = False
     ) -> int:
         """
-        Add settlement layers to napari viewer.
+        Add settlement layers and debug suitability layers to napari viewer.
         
         Args:
             viewer: Napari viewer instance
@@ -37,20 +43,117 @@ class Pass16SettlementsNapariVisualizer(BaseNapariVisualizer):
         
         added_count = 0
         
-        # Settlement presence map (rasterized)
+        # =====================================================================
+        # DEBUG LAYERS - Suitability Scores
+        # =====================================================================
+        
+        if hasattr(world_state, 'settlement_debug_data') and world_state.settlement_debug_data:
+            debug_data = world_state.settlement_debug_data
+            
+            # Total Suitability Score
+            if 'total' in debug_data:
+                viewer.add_image(
+                    debug_data['total'],
+                    name=self._layer_name("🔍 Suitability: Total"),
+                    colormap='viridis',
+                    opacity=0.6,
+                    visible=False,
+                )
+                added_count += 1
+                print(f"   ✓ Added layer: {self._layer_name('🔍 Suitability: Total')}")
+            
+            # Water Access Score
+            if 'water' in debug_data:
+                viewer.add_image(
+                    debug_data['water'],
+                    name=self._layer_name("🔍 Suitability: Water"),
+                    colormap='Blues',
+                    opacity=0.6,
+                    visible=False,
+                )
+                added_count += 1
+                print(f"   ✓ Added layer: {self._layer_name('🔍 Suitability: Water')}")
+            
+            # Defense Score
+            if 'defense' in debug_data:
+                viewer.add_image(
+                    debug_data['defense'],
+                    name=self._layer_name("🔍 Suitability: Defense"),
+                    colormap='YlOrRd',
+                    opacity=0.6,
+                    visible=False,
+                )
+                added_count += 1
+                print(f"   ✓ Added layer: {self._layer_name('🔍 Suitability: Defense')}")
+            
+            # Resource Score
+            if 'resource' in debug_data:
+                viewer.add_image(
+                    debug_data['resource'],
+                    name=self._layer_name("🔍 Suitability: Resources"),
+                    colormap='YlGn',
+                    opacity=0.6,
+                    visible=False,
+                )
+                added_count += 1
+                print(f"   ✓ Added layer: {self._layer_name('🔍 Suitability: Resources')}")
+            
+            # Climate Score
+            if 'climate' in debug_data:
+                viewer.add_image(
+                    debug_data['climate'],
+                    name=self._layer_name("🔍 Suitability: Climate"),
+                    colormap='RdYlBu_r',
+                    opacity=0.6,
+                    visible=False,
+                )
+                added_count += 1
+                print(f"   ✓ Added layer: {self._layer_name('🔍 Suitability: Climate')}")
+            
+            # Accessibility Score
+            if 'access' in debug_data:
+                viewer.add_image(
+                    debug_data['access'],
+                    name=self._layer_name("🔍 Suitability: Accessibility"),
+                    colormap='Purples',
+                    opacity=0.6,
+                    visible=False,
+                )
+                added_count += 1
+                print(f"   ✓ Added layer: {self._layer_name('🔍 Suitability: Accessibility')}")
+        
+        # =====================================================================
+        # SETTLEMENT MAP (Rasterized)
+        # =====================================================================
+        
         settlement_map = self._stitch_chunks(world_state, 'settlement_presence')
         if settlement_map is not None:
-            # Create labels layer for settlement types
+            # Create custom colormap for settlement types
+            colors = {
+                0: [0, 0, 0, 0],        # Empty (transparent)
+                1: [0.5, 1, 0.5, 0.5],  # Hamlet (light green)
+                2: [1, 1, 0, 0.6],      # Village (yellow)
+                3: [1, 0.5, 0, 0.7],    # Town (orange)
+                4: [1, 0, 0, 0.8],      # City (red)
+                5: [1, 0.84, 0, 0.9],   # Metropolis (gold)
+                6: [0.5, 0, 0, 0.8],    # Fortress (dark red)
+                7: [0.53, 0.81, 0.98, 0.7],  # Monastery (light blue)
+                8: [0.5, 0.5, 0.5, 0.6],     # Ruin (gray)
+            }
+            
             viewer.add_labels(
                 settlement_map,
-                name=self._layer_name("Settlement Map"),
+                name=self._layer_name("Settlement Map (Raster)"),
                 opacity=0.7,
-                visible=False,  # Hidden by default in favor of points
+                visible=False,
             )
             added_count += 1
-            print(f"   ✓ Added layer: {self._layer_name('Settlement Map')}")
+            print(f"   ✓ Added layer: {self._layer_name('Settlement Map (Raster)')}")
         
-        # Collect all settlements as points
+        # =====================================================================
+        # SETTLEMENT POINTS (Primary visualization)
+        # =====================================================================
+        
         settlements = self._collect_settlements(world_state)
         
         if settlements and len(settlements) > 0:
@@ -80,12 +183,8 @@ class Pass16SettlementsNapariVisualizer(BaseNapariVisualizer):
                 added_count += 1
                 print(f"   ✓ Added layer: {self._layer_name('Metropolises')} ({len(metropolises)} points)")
             
-            # Add cities
+            # Add cities (separate capitals from regular)
             if cities:
-                coords = np.array([[s['x'], s['y']] for s in cities])
-                sizes = np.array([self._pop_to_size(s['population']) for s in cities])
-                
-                # Mark capitals with different color
                 capitals = [s for s in cities if s['is_capital']]
                 regular_cities = [s for s in cities if not s['is_capital']]
                 
@@ -94,7 +193,7 @@ class Pass16SettlementsNapariVisualizer(BaseNapariVisualizer):
                     cap_sizes = np.array([self._pop_to_size(s['population']) for s in capitals])
                     viewer.add_points(
                         cap_coords,
-                        name=self._layer_name("Capital Cities"),
+                        name=self._layer_name("Capital Cities ★"),
                         size=cap_sizes,
                         face_color='purple',
                         edge_color='white',
@@ -102,7 +201,7 @@ class Pass16SettlementsNapariVisualizer(BaseNapariVisualizer):
                         visible=default_visible,
                     )
                     added_count += 1
-                    print(f"   ✓ Added layer: {self._layer_name('Capital Cities')} ({len(capitals)} points)")
+                    print(f"   ✓ Added layer: {self._layer_name('Capital Cities ★')} ({len(capitals)} points)")
                 
                 if regular_cities:
                     reg_coords = np.array([[s['x'], s['y']] for s in regular_cities])
@@ -171,37 +270,39 @@ class Pass16SettlementsNapariVisualizer(BaseNapariVisualizer):
                 coords = np.array([[s['x'], s['y']] for s in fortresses])
                 viewer.add_points(
                     coords,
-                    name=self._layer_name("Fortresses"),
+                    name=self._layer_name("Fortresses ⚔"),
                     size=12,
                     face_color='darkred',
                     edge_color='black',
                     edge_width=2,
+                    symbol='square',
                     visible=False,
                 )
                 added_count += 1
-                print(f"   ✓ Added layer: {self._layer_name('Fortresses')} ({len(fortresses)} points)")
+                print(f"   ✓ Added layer: {self._layer_name('Fortresses ⚔')} ({len(fortresses)} points)")
             
             # Add monasteries
             if monasteries:
                 coords = np.array([[s['x'], s['y']] for s in monasteries])
                 viewer.add_points(
                     coords,
-                    name=self._layer_name("Monasteries"),
+                    name=self._layer_name("Monasteries ✟"),
                     size=10,
                     face_color='lightblue',
                     edge_color='white',
                     edge_width=2,
+                    symbol='cross',
                     visible=False,
                 )
                 added_count += 1
-                print(f"   ✓ Added layer: {self._layer_name('Monasteries')} ({len(monasteries)} points)")
+                print(f"   ✓ Added layer: {self._layer_name('Monasteries ✟')} ({len(monasteries)} points)")
             
             # Add ruins
             if ruins:
                 coords = np.array([[s['x'], s['y']] for s in ruins])
                 viewer.add_points(
                     coords,
-                    name=self._layer_name("Ruins"),
+                    name=self._layer_name("Ruins ☠"),
                     size=8,
                     face_color='gray',
                     edge_color='black',
@@ -210,10 +311,12 @@ class Pass16SettlementsNapariVisualizer(BaseNapariVisualizer):
                     visible=False,
                 )
                 added_count += 1
-                print(f"   ✓ Added layer: {self._layer_name('Ruins')} ({len(ruins)} points)")
+                print(f"   ✓ Added layer: {self._layer_name('Ruins ☠')} ({len(ruins)} points)")
             
-            # Also add by specialization (alternative view)
-            # Group by specialization
+            # =====================================================================
+            # SPECIALIZATION LAYERS (Alternative view)
+            # =====================================================================
+            
             spec_names = {
                 0: "Agricultural",
                 1: "Mining",
@@ -226,42 +329,54 @@ class Pass16SettlementsNapariVisualizer(BaseNapariVisualizer):
             }
             
             spec_colors = {
-                0: 'green',
-                1: 'brown',
-                2: 'blue',
-                3: 'yellow',
-                4: 'red',
-                5: 'lightblue',
-                6: 'purple',
-                7: 'orange',
+                0: '#90EE90',  # Light green
+                1: '#8B4513',  # Brown
+                2: '#4682B4',  # Steel blue
+                3: '#FFD700',  # Gold
+                4: '#DC143C',  # Crimson
+                5: '#87CEEB',  # Sky blue
+                6: '#9370DB',  # Purple
+                7: '#FF8C00',  # Dark orange
             }
             
-            # Create specialization layers (hidden by default)
             for spec_id, spec_name in spec_names.items():
                 spec_settlements = [s for s in settlements if s['specialization'] == spec_id and not s['is_ruin']]
                 
                 if spec_settlements:
                     coords = np.array([[s['x'], s['y']] for s in spec_settlements])
+                    sizes = np.array([self._pop_to_size(s['population']) for s in spec_settlements])
                     viewer.add_points(
                         coords,
-                        name=self._layer_name(f"Spec: {spec_name}"),
-                        size=8,
+                        name=self._layer_name(f"Specialization: {spec_name}"),
+                        size=sizes,
                         face_color=spec_colors[spec_id],
                         edge_color='white',
                         edge_width=1,
                         visible=False,  # Hidden by default
                     )
                     added_count += 1
+                    print(f"   ✓ Added layer: {self._layer_name(f'Specialization: {spec_name}')} ({len(spec_settlements)} points)")
+            
+            # =====================================================================
+            # SETTLEMENT DENSITY HEATMAP
+            # =====================================================================
+            
+            density_map = self._create_density_heatmap(settlements, world_state.size)
+            if density_map is not None:
+                viewer.add_image(
+                    density_map,
+                    name=self._layer_name("🔍 Settlement Density"),
+                    colormap='hot',
+                    opacity=0.5,
+                    visible=False,
+                )
+                added_count += 1
+                print(f"   ✓ Added layer: {self._layer_name('🔍 Settlement Density')}")
         
         return added_count
     
     def _collect_settlements(self, world_state) -> Optional[list]:
-        """
-        Collect all settlements from chunks.
-        
-        Returns:
-            List of settlement dictionaries
-        """
+        """Collect all settlements from chunks."""
         settlements = []
         
         for chunk in world_state.chunks.values():
@@ -281,18 +396,45 @@ class Pass16SettlementsNapariVisualizer(BaseNapariVisualizer):
     
     def _pop_to_size(self, population: int) -> float:
         """Convert population to point size for visualization."""
-        # Logarithmic scaling
         import math
         if population <= 0:
             return 5
         
-        # Size range: 8-24 pixels
+        # Logarithmic scaling: 8-24 pixels
         log_pop = math.log10(population)
-        min_log = math.log10(20)    # Hamlet
-        max_log = math.log10(100000)  # Metropolis
+        min_log = math.log10(20)       # Hamlet
+        max_log = math.log10(100000)   # Metropolis
         
         normalized = (log_pop - min_log) / (max_log - min_log)
         normalized = np.clip(normalized, 0, 1)
         
         size = 8 + normalized * 16  # 8 to 24 pixels
         return size
+    
+    def _create_density_heatmap(self, settlements: list, size: int) -> Optional[np.ndarray]:
+        """
+        Create a density heatmap showing settlement concentration.
+        Uses Gaussian kernel for smooth density estimation.
+        """
+        if not settlements:
+            return None
+        
+        from scipy.ndimage import gaussian_filter
+        
+        # Create accumulation map
+        density = np.zeros((size, size), dtype=np.float32)
+        
+        for s in settlements:
+            if not s['is_ruin']:
+                # Weight by population (log scale)
+                weight = np.log10(s['population'] + 1)
+                density[s['x'], s['y']] += weight
+        
+        # Smooth with Gaussian filter
+        density = gaussian_filter(density, sigma=20.0)
+        
+        # Normalize
+        if density.max() > 0:
+            density = density / density.max()
+        
+        return density
