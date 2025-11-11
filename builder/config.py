@@ -247,6 +247,7 @@ GENERATION_PASSES = [
     "pass_13_fauna",
     "pass_14_resources",
     "pass_15_magic",
+    "pass_16_settlements",
 ]
 
 # Pass weights for progress calculation
@@ -266,6 +267,7 @@ PASS_WEIGHTS = {
     "pass_13_fauna": 6,
     "pass_14_resources": 5,
     "pass_15_magic": 6,
+    "pass_16_settlements": 7,
 }
 
 # =============================================================================

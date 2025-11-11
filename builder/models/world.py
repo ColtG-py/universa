@@ -222,6 +222,10 @@ class WorldChunk:
         self.ley_line_node: Optional[np.ndarray] = None  # bool[256, 256] - intersection points
         self.corrupted_zone: Optional[np.ndarray] = None  # bool[256, 256]
         self.elemental_affinity: Optional[np.ndarray] = None  # uint8[256, 256] - ElementalAffinity enum
+
+        # Pass 16: Settlements
+        self.settlement_presence: Optional[np.ndarray] = None  # uint8[256, 256] - settlement type map
+        self.settlements: List[Any] = []  # List of Settlement objects in this chunk
     
         # Enchanted locations in this chunk
         self.enchanted_locations: List[EnchantedLocation] = []
@@ -429,6 +433,9 @@ class WorldState:
         
         # Ley line network (from Pass 15)
         self.ley_line_network: Optional[List[LeyLineSegment]] = None
+
+        # Settlements (Pass 16)
+        self.settlements: Optional[List[Any]] = None
 
         # Chunks dictionary: (chunk_x, chunk_y) -> WorldChunk
         self.chunks: Dict[tuple, WorldChunk] = {}
