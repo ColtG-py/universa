@@ -359,3 +359,24 @@ def interpolate_2d(
     v1 = v01 * (1 - fx) + v11 * fx
     
     return v0 * (1 - fy) + v1 * fy
+
+def calculate_slope(elevation: np.ndarray) -> np.ndarray:
+    """
+    Calculate slope magnitude from elevation data.
+    
+    Args:
+        elevation: 2D array of elevations
+    
+    Returns:
+        Slope magnitude (0-1+ scale, where 1 = 45 degrees)
+    """
+    # Calculate gradients
+    grad_y, grad_x = np.gradient(elevation)
+    
+    # Slope magnitude
+    slope = np.sqrt(grad_x**2 + grad_y**2)
+    
+    # Convert to degrees: arctan(slope) * 180/pi
+    # But keep as magnitude for cost calculations
+    
+    return slope

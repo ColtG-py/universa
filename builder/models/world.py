@@ -148,6 +148,38 @@ class EnchantedLocation(BaseModel):
         use_enum_values = True
 
 # =============================================================================
+# ROAD NETWORK DATA STRUCTURES
+# =============================================================================
+
+class RoadSegment(BaseModel):
+    """
+    A segment of road connecting two points.
+    May connect settlements or connect a settlement to the highway network.
+    """
+    start_settlement_id: int  # -1 if connecting to highway
+    end_settlement_id: int    # -1 if connecting to highway
+    path: List[Tuple[int, int]]  # List of (x, y) coordinates along the road
+    road_type: int  # 0-4: Imperial Highway, Main Road, Rural Road, Path, Trail
+    length: int  # Number of cells in path
+    cost: float  # Terrain-adjusted cost used in pathfinding
+    crosses_water: bool  # Whether this road includes a bridge
+    
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class Bridge(BaseModel):
+    """A bridge crossing water."""
+    bridge_id: int
+    x: int
+    y: int
+    length: int  # Number of cells spanning water
+    road_type: int  # Type of road this bridge carries
+    
+    class Config:
+        arbitrary_types_allowed = True
+
+# =============================================================================
 # WORLD CHUNK DATA
 # =============================================================================
 
@@ -226,6 +258,12 @@ class WorldChunk:
         # Pass 16: Settlements
         self.settlement_presence: Optional[np.ndarray] = None  # uint8[256, 256] - settlement type map
         self.settlements: List[Any] = []  # List of Settlement objects in this chunk
+
+        # Pass 17: Roads
+        self.road_presence: Optional[np.ndarray] = None  # bool[256, 256] - where roads exist
+        self.road_type: Optional[np.ndarray] = None  # uint8[256, 256] - type of road (0-5)
+        self.roads: List[RoadSegment] = []  # Road segments in this chunk
+        self.bridges: List[Bridge] = []  # Bridges in this chunk
     
         # Enchanted locations in this chunk
         self.enchanted_locations: List[EnchantedLocation] = []
@@ -276,6 +314,7 @@ class WorldChunk:
             "agricultural_yield", "fishing_quality", "rare_resources", "resource_accessibility",
             "mana_concentration", "ley_line_presence", "ley_line_node",
             "corrupted_zone", "elemental_affinity",
+            "road_presence", "road_type",
         ]
         
         for field in array_fields:
@@ -313,6 +352,14 @@ class WorldChunk:
             data["enchanted_locations"] = [
                 loc.dict() for loc in self.enchanted_locations
             ]
+        
+        # Serialize roads
+        if self.roads:
+            data["roads"] = [road.dict() for road in self.roads]
+        
+        # Serialize bridges
+        if self.bridges:
+            data["bridges"] = [bridge.dict() for bridge in self.bridges]
         
         return data
     
@@ -362,6 +409,8 @@ class WorldChunk:
             "ley_line_node": bool,
             "corrupted_zone": bool,
             "elemental_affinity": np.uint8,
+            "road_presence": bool,
+            "road_type": np.uint8,
         }
         
         for field, dtype in array_fields.items():
@@ -402,6 +451,20 @@ class WorldChunk:
                 for loc in data["enchanted_locations"]
             ]
         
+        # Deserialize roads
+        if "roads" in data and data["roads"]:
+            chunk.roads = [
+                RoadSegment(**road)
+                for road in data["roads"]
+            ]
+        
+        # Deserialize bridges
+        if "bridges" in data and data["bridges"]:
+            chunk.bridges = [
+                Bridge(**bridge)
+                for bridge in data["bridges"]
+            ]
+        
         return chunk
 
 
@@ -436,6 +499,10 @@ class WorldState:
 
         # Settlements (Pass 16)
         self.settlements: Optional[List[Any]] = None
+
+        # Road network (Pass 17)
+        self.road_network: Optional[List[RoadSegment]] = None
+        self.bridges: Optional[List[Bridge]] = None
 
         # Chunks dictionary: (chunk_x, chunk_y) -> WorldChunk
         self.chunks: Dict[tuple, WorldChunk] = {}

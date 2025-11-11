@@ -179,6 +179,13 @@ class EnchantedLocationType(str, Enum):
     CRYSTAL_CAVERN = "crystal_cavern"    # Underground magic amplifiers
     CORRUPTED_SITE = "corrupted_site"    # Magically warped zones
 
+class RoadType(IntEnum):
+    """Types of roads in the network"""
+    IMPERIAL_HIGHWAY = 0  # Major highways connecting metropolises (paved, wide)
+    MAIN_ROAD = 1         # Roads connecting cities (gravel/cobblestone)
+    RURAL_ROAD = 2        # Roads connecting towns (dirt, well-maintained)
+    PATH = 3              # Paths connecting villages (dirt, basic)
+    TRAIL = 4             # Trails connecting hamlets (unpaved, narrow)
 
 # =============================================================================
 # GENERATION PARAMETERS
@@ -248,6 +255,7 @@ GENERATION_PASSES = [
     "pass_14_resources",
     "pass_15_magic",
     "pass_16_settlements",
+    "pass_17_roads",
 ]
 
 # Pass weights for progress calculation
@@ -268,6 +276,7 @@ PASS_WEIGHTS = {
     "pass_14_resources": 5,
     "pass_15_magic": 6,
     "pass_16_settlements": 7,
+    "pass_17_roads": 8,
 }
 
 # =============================================================================
@@ -315,4 +324,22 @@ MINERAL_PROBABILITIES = {
         Mineral.SALT: 0.4,
         Mineral.IRON: 0.2,
     },
+}
+
+# Road travel speeds (km/hour)
+ROAD_SPEEDS = {
+    RoadType.IMPERIAL_HIGHWAY: 30,  # Fast travel on paved roads
+    RoadType.MAIN_ROAD: 25,          # Good travel on cobblestone
+    RoadType.RURAL_ROAD: 20,         # Moderate travel on dirt roads
+    RoadType.PATH: 15,               # Slow travel on paths
+    RoadType.TRAIL: 12,              # Very slow travel on trails
+}
+
+# Road construction costs (abstract units)
+ROAD_COSTS = {
+    RoadType.IMPERIAL_HIGHWAY: 100,
+    RoadType.MAIN_ROAD: 50,
+    RoadType.RURAL_ROAD: 20,
+    RoadType.PATH: 10,
+    RoadType.TRAIL: 5,
 }
