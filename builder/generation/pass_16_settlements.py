@@ -70,6 +70,9 @@ class Settlement:
     access_score: float = 0.0
     total_score: float = 0.0
 
+    # Political affiliation (assigned in Pass 18)
+    faction_id: Optional[int] = None
+
 
 @dataclass
 class WorldStatistics:

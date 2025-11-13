@@ -30,7 +30,7 @@ def demo_world_with_napari():
     
     # Configure world generation parameters
     params = WorldGenerationParams(
-        seed=420,
+        seed=1002,
         size=WorldSize.SMALL,  # 512x512 world
         
         # Planetary parameters
@@ -40,11 +40,11 @@ def demo_world_with_napari():
         rotation_hours=24.0,
         
         # Tectonic parameters
-        num_plates=58,
+        num_plates=40,
         plate_speed_mm_year=50.0,
         
         # Atmospheric parameters
-        base_temperature_c=15.0,
+        base_temperature_c=12.0,
         atmospheric_pressure_atm=1.0,
         
         # Hydrological parameters
@@ -56,7 +56,7 @@ def demo_world_with_napari():
         custom_noise_lacunarity=2.0,
         
         # Erosion parameters
-        erosion_iterations=2,
+        erosion_iterations=10,
         erosion_strength=1.0,
         
         # Feature generation

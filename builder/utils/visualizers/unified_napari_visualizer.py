@@ -28,6 +28,7 @@ from .pass_14_resources_viz_napari import Pass14ResourcesNapariVisualizer
 from .pass_15_magic_viz_napari import Pass15MagicNapariVisualizer
 from .pass_16_settlements_viz_napari import Pass16SettlementsNapariVisualizer
 from .pass_17_roads_viz_napari import Pass17RoadsNapariVisualizer
+from .pass_18_politics_viz_napari import Pass18PoliticsNapariVisualizer
 
 class UnifiedNapariVisualizer:
     """
@@ -71,6 +72,7 @@ class UnifiedNapariVisualizer:
             15: Pass15MagicNapariVisualizer(),
             16: Pass16SettlementsNapariVisualizer(),
             17: Pass17RoadsNapariVisualizer(),
+            18: Pass18PoliticsNapariVisualizer(),
         }
         
         self.viewer = None

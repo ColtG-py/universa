@@ -24,6 +24,8 @@ from config import (
     QuarryType,
     ElementalAffinity,
     EnchantedLocationType,
+    FactionType, 
+    BorderType,
     CHUNK_SIZE
 )
 
@@ -180,6 +182,45 @@ class Bridge(BaseModel):
         arbitrary_types_allowed = True
 
 # =============================================================================
+# POLITICAL DATA STRUCTURES
+# =============================================================================
+
+class Faction(BaseModel):
+    """
+    A political faction (kingdom, duchy, etc.) controlling territory.
+    """
+    faction_id: int
+    name: str
+    faction_type: FactionType
+    
+    # Capital location
+    capital_settlement_id: int
+    capital_x: int
+    capital_y: int
+    
+    # Statistics (updated during generation)
+    num_settlements: int = 0
+    num_cities: int = 0
+    total_population: int = 0
+    territory_size_km2: float = 0.0
+    
+    # Feudal relationships
+    liege_faction_id: Optional[int] = None  # If this faction is a vassal
+    vassal_faction_ids: List[int] = Field(default_factory=list)  # Vassals of this faction
+    
+    # Diplomatic relationships
+    allied_faction_ids: List[int] = Field(default_factory=list)
+    enemy_faction_ids: List[int] = Field(default_factory=list)
+    
+    # Culture and identity
+    culture_group: Optional[str] = None
+    primary_language: Optional[str] = None
+    state_religion: Optional[str] = None
+    
+    class Config:
+        use_enum_values = True
+
+# =============================================================================
 # WORLD CHUNK DATA
 # =============================================================================
 
@@ -264,7 +305,12 @@ class WorldChunk:
         self.road_type: Optional[np.ndarray] = None  # uint8[256, 256] - type of road (0-5)
         self.roads: List[RoadSegment] = []  # Road segments in this chunk
         self.bridges: List[Bridge] = []  # Bridges in this chunk
-    
+
+        # Pass 18: Political Boundaries
+        self.faction_territory: Optional[np.ndarray] = None  # uint16[256, 256] - faction IDs
+        self.border_type: Optional[np.ndarray] = None  # uint8[256, 256] - BorderType enum
+        self.contested_zone: Optional[np.ndarray] = None  # bool[256, 256] - disputed territories
+            
         # Enchanted locations in this chunk
         self.enchanted_locations: List[EnchantedLocation] = []
 
@@ -315,6 +361,7 @@ class WorldChunk:
             "mana_concentration", "ley_line_presence", "ley_line_node",
             "corrupted_zone", "elemental_affinity",
             "road_presence", "road_type",
+            "faction_territory", "border_type", "contested_zone",
         ]
         
         for field in array_fields:
@@ -411,6 +458,9 @@ class WorldChunk:
             "elemental_affinity": np.uint8,
             "road_presence": bool,
             "road_type": np.uint8,
+            "faction_territory": np.uint16,
+            "border_type": np.uint8,
+            "contested_zone": bool,
         }
         
         for field, dtype in array_fields.items():
@@ -506,6 +556,9 @@ class WorldState:
 
         # Chunks dictionary: (chunk_x, chunk_y) -> WorldChunk
         self.chunks: Dict[tuple, WorldChunk] = {}
+
+        # Factions (Pass 18)
+        self.factions: Optional[List[Faction]] = None
     
     def get_chunk(self, chunk_x: int, chunk_y: int) -> Optional[WorldChunk]:
         """Get chunk at specified chunk coordinates"""

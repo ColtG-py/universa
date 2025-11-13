@@ -187,6 +187,24 @@ class RoadType(IntEnum):
     PATH = 3              # Paths connecting villages (dirt, basic)
     TRAIL = 4             # Trails connecting hamlets (unpaved, narrow)
 
+class FactionType(IntEnum):
+    """Types of political factions"""
+    KINGDOM = 0           # Large organized state (5-15 cities)
+    DUCHY = 1             # Semi-autonomous region (2-5 cities)
+    COUNTY = 2            # Smaller territory (0-1 city)
+    FREE_CITY = 3         # Independent city-state
+    TRIBAL = 4            # Nomadic/semi-nomadic confederation
+    THEOCRACY = 5         # Religious state
+
+
+class BorderType(IntEnum):
+    """Types of political borders"""
+    NONE = 0              # No border
+    POLITICAL = 1         # Arbitrary political border
+    RIVER = 2             # Natural river border
+    MOUNTAIN = 3          # Mountain range border
+    COAST = 4             # Coastal border
+
 # =============================================================================
 # GENERATION PARAMETERS
 # =============================================================================
@@ -256,6 +274,7 @@ GENERATION_PASSES = [
     "pass_15_magic",
     "pass_16_settlements",
     "pass_17_roads",
+    "pass_18_politics",
 ]
 
 # Pass weights for progress calculation
@@ -277,6 +296,7 @@ PASS_WEIGHTS = {
     "pass_15_magic": 6,
     "pass_16_settlements": 7,
     "pass_17_roads": 8,
+    "pass_18_politics": 9,
 }
 
 # =============================================================================
