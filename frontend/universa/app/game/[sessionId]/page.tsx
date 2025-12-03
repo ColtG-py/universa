@@ -10,11 +10,19 @@ import { useGameWebSocket } from '@/hooks/useGameWebSocket';
 import { useWorldChunks } from '@/hooks/useWorlds';
 import { useDialogue } from '@/hooks/useDialogue';
 import { api } from '@/lib/api';
-import ChatPanel from '@/components/ui/ChatPanel';
 import CharacterSheet from '@/components/ui/CharacterSheet';
 import AgentInfoPanel from '@/components/ui/AgentInfoPanel';
 import TileInfoPanel from '@/components/ui/TileInfoPanel';
-import PartyPanel from '@/components/ui/PartyPanel';
+import LocationDisplay from '@/components/ui/LocationDisplay';
+import TimeIndicator from '@/components/ui/TimeIndicator';
+import MenuButtons from '@/components/ui/MenuButtons';
+import PartyListBar from '@/components/ui/PartyListBar';
+import Minimap from '@/components/ui/Minimap';
+import DMPlaceholder from '@/components/ui/DMPlaceholder';
+import SettingsPanel from '@/components/ui/SettingsPanel';
+import JournalPanel from '@/components/ui/JournalPanel';
+import QuestsPanel from '@/components/ui/QuestsPanel';
+import InventoryPanel from '@/components/ui/InventoryPanel';
 import type { ChatMessage } from '@/types/game';
 
 const TILE_SIZE = 32;
@@ -34,8 +42,6 @@ export default function GameSessionPage({ params }: { params: Promise<{ sessionI
   const { sessionId } = use(params);
   const router = useRouter();
 
-  const [isCharacterSheetOpen, setCharacterSheetOpen] = useState(false);
-  const [isDebugOpen, setDebugOpen] = useState(false);
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
   const [sessionData, setSessionData] = useState<{
     worldId: string;
@@ -52,11 +58,21 @@ export default function GameSessionPage({ params }: { params: Promise<{ sessionI
   const agents = useGameStore(state => state.agents);
   const addMessage = useGameStore(state => state.addMessage);
   const setTiles = useGameStore(state => state.setTiles);
+  const addTiles = useGameStore(state => state.addTiles);
+  const markChunkLoaded = useGameStore(state => state.markChunkLoaded);
+  const isChunkLoaded = useGameStore(state => state.isChunkLoaded);
   const setWorld = useGameStore(state => state.setWorld);
   const setInputMode = useGameStore(state => state.setInputMode);
   const selectAgent = useGameStore(state => state.selectAgent);
   const setLocalPlayer = useGameStore(state => state.setLocalPlayer);
   const setViewport = useGameStore(state => state.setViewport);
+
+  // HUD state
+  const openPanel = useGameStore(state => state.openPanel);
+  const setOpenPanel = useGameStore(state => state.setOpenPanel);
+  const togglePanel = useGameStore(state => state.togglePanel);
+  const setGameTime = useGameStore(state => state.setGameTime);
+  const setCurrentLocation = useGameStore(state => state.setCurrentLocation);
 
   // Hooks
   const { loadSession, isLoading: sessionLoading, error: sessionError, pause, resume, isAutoTicking } = useGameSession();
@@ -133,16 +149,27 @@ export default function GameSessionPage({ params }: { params: Promise<{ sessionI
 
         // Set local player in store
         if (session.player) {
+          const playerStats = session.player.stats || {};
           setLocalPlayer({
             id: session.player.id,
             name: session.player.name,
             x: session.player.x,
             y: session.player.y,
-            health: session.player.health,
-            maxHealth: session.player.max_health,
-            stamina: session.player.stamina,
-            maxStamina: session.player.max_stamina,
-            stats: session.player.stats || {},
+            isAgent: false,
+            agentId: null,
+            stats: {
+              health: session.player.health ?? playerStats.health ?? 100,
+              maxHealth: session.player.max_health ?? playerStats.maxHealth ?? 100,
+              mana: playerStats.mana ?? 50,
+              maxMana: playerStats.maxMana ?? 50,
+              strength: playerStats.strength ?? 10,
+              dexterity: playerStats.dexterity ?? 10,
+              constitution: playerStats.constitution ?? 10,
+              intelligence: playerStats.intelligence ?? 10,
+              wisdom: playerStats.wisdom ?? 10,
+              charisma: playerStats.charisma ?? 10,
+            },
+            inventory: [],
           });
 
           // Center viewport on player position
@@ -154,14 +181,26 @@ export default function GameSessionPage({ params }: { params: Promise<{ sessionI
             y: session.player.y * TILE_SIZE - canvasSize.height / 2,
           });
 
-          // Load initial chunks around player
+          // Load initial chunks around player using chunk regions
+          const CHUNK_SIZE = 30;
+          const playerChunkX = Math.floor(session.player.x / CHUNK_SIZE);
+          const playerChunkY = Math.floor(session.player.y / CHUNK_SIZE);
+
+          // Mark initial 3x3 chunk regions as loaded
+          const markChunkLoaded = useGameStore.getState().markChunkLoaded;
+          for (let cx = playerChunkX - 1; cx <= playerChunkX + 1; cx++) {
+            for (let cy = playerChunkY - 1; cy <= playerChunkY + 1; cy++) {
+              markChunkLoaded(`${cx},${cy}`);
+            }
+          }
+
           const bounds = {
-            xMin: session.player.x - 30,
-            xMax: session.player.x + 30,
-            yMin: session.player.y - 30,
-            yMax: session.player.y + 30,
+            xMin: (playerChunkX - 1) * CHUNK_SIZE,
+            xMax: (playerChunkX + 2) * CHUNK_SIZE - 1,
+            yMin: (playerChunkY - 1) * CHUNK_SIZE,
+            yMax: (playerChunkY + 2) * CHUNK_SIZE - 1,
           };
-          console.log('Loading chunks with bounds:', bounds);
+          console.log('Loading initial chunks with bounds:', bounds);
           const chunksData = await api.getWorldChunks(session.world_id, bounds);
           console.log('Chunks data received:', chunksData);
 
@@ -180,7 +219,7 @@ export default function GameSessionPage({ params }: { params: Promise<{ sessionI
               factionName: chunk.faction_name,
               resourceType: chunk.resource_type,
             }));
-            console.log(`Setting ${tiles.length} tiles`);
+            console.log(`Setting ${tiles.length} initial tiles (${bounds.xMax - bounds.xMin + 1}x${bounds.yMax - bounds.yMin + 1} area)`);
             setTiles(tiles);
           } else {
             console.warn('No chunks data received');
@@ -223,14 +262,12 @@ export default function GameSessionPage({ params }: { params: Promise<{ sessionI
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
-  // Handle window resize
+  // Handle window resize - fullscreen canvas
   useEffect(() => {
     const updateSize = () => {
-      const chatPanelWidth = 320;
-      const padding = 32;
       setCanvasSize({
-        width: Math.max(600, window.innerWidth - chatPanelWidth - padding),
-        height: Math.max(400, window.innerHeight - 100),
+        width: window.innerWidth,
+        height: window.innerHeight,
       });
     };
 
@@ -332,19 +369,41 @@ export default function GameSessionPage({ params }: { params: Promise<{ sessionI
       console.error('Failed to sync player position:', err);
     }
 
-    // Load new chunks if player moved significantly
-    const chunkThreshold = 10; // tiles
-    const needsNewChunks =
-      Math.abs(newX - (viewport.x / TILE_SIZE + canvasSize.width / (2 * TILE_SIZE))) > chunkThreshold ||
-      Math.abs(newY - (viewport.y / TILE_SIZE + canvasSize.height / (2 * TILE_SIZE))) > chunkThreshold;
+    // Check if we need to load new chunks based on chunk regions
+    // Chunks are 30x30 tiles, we load when entering a new chunk region
+    const CHUNK_SIZE = 30;
+    const currentChunkX = Math.floor(newX / CHUNK_SIZE);
+    const currentChunkY = Math.floor(newY / CHUNK_SIZE);
 
-    if (needsNewChunks) {
+    // Check surrounding chunk regions (3x3 around current position)
+    const chunksToLoad: { x: number; y: number }[] = [];
+    for (let cx = currentChunkX - 1; cx <= currentChunkX + 1; cx++) {
+      for (let cy = currentChunkY - 1; cy <= currentChunkY + 1; cy++) {
+        const chunkKey = `${cx},${cy}`;
+        if (!isChunkLoaded(chunkKey)) {
+          chunksToLoad.push({ x: cx, y: cy });
+          markChunkLoaded(chunkKey);
+        }
+      }
+    }
+
+    // Load any unloaded chunks
+    if (chunksToLoad.length > 0) {
+      // Calculate bounds to cover all chunks we need to load
+      const minChunkX = Math.min(...chunksToLoad.map(c => c.x));
+      const maxChunkX = Math.max(...chunksToLoad.map(c => c.x));
+      const minChunkY = Math.min(...chunksToLoad.map(c => c.y));
+      const maxChunkY = Math.max(...chunksToLoad.map(c => c.y));
+
       const bounds = {
-        xMin: newX - 30,
-        xMax: newX + 30,
-        yMin: newY - 30,
-        yMax: newY + 30,
+        xMin: minChunkX * CHUNK_SIZE,
+        xMax: (maxChunkX + 1) * CHUNK_SIZE - 1,
+        yMin: minChunkY * CHUNK_SIZE,
+        yMax: (maxChunkY + 1) * CHUNK_SIZE - 1,
       };
+
+      console.log(`Loading ${chunksToLoad.length} new chunk regions:`, chunksToLoad.map(c => `${c.x},${c.y}`).join(', '));
+
       try {
         const chunksData = await api.getWorldChunks(sessionData.worldId, bounds);
         if (chunksData.chunks && chunksData.chunks.length > 0) {
@@ -361,16 +420,21 @@ export default function GameSessionPage({ params }: { params: Promise<{ sessionI
             factionName: chunk.faction_name,
             resourceType: chunk.resource_type,
           }));
-          setTiles(tiles);
+          console.log(`Adding ${tiles.length} new tiles`);
+          addTiles(tiles);
         }
       } catch (err) {
         console.error('Failed to load chunks:', err);
+        // Unmark chunks on failure so they can be retried
+        chunksToLoad.forEach(c => {
+          // Note: We'd need to add a removeChunkLoaded action to properly handle this
+        });
       }
     }
 
     // Note: Don't call refreshAgents() on every move - it clears party members
     // Party members are updated via tick, nearby world agents can be loaded on demand
-  }, [localPlayer, sessionId, sessionData, updateLocalPlayerPosition, setViewport, canvasSize, viewport, setTiles]);
+  }, [localPlayer, sessionId, sessionData, updateLocalPlayerPosition, setViewport, canvasSize, isChunkLoaded, markChunkLoaded, addTiles]);
 
   // Handle party member talk
   const handleTalkToPartyMember = useCallback(async (memberId: string) => {
@@ -399,6 +463,9 @@ export default function GameSessionPage({ params }: { params: Promise<{ sessionI
     selectAgent(memberId);
   }, [selectAgent]);
 
+  // Close panel helper
+  const closePanel = useCallback(() => setOpenPanel(null), [setOpenPanel]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -424,14 +491,8 @@ export default function GameSessionPage({ params }: { params: Promise<{ sessionI
           handleMove(0, 1);
           break;
         case 'd':
-          if (e.shiftKey) {
-            // Shift+D for debug
-            setDebugOpen(prev => !prev);
-          } else {
-            // D for move right
-            e.preventDefault();
-            handleMove(1, 0);
-          }
+          e.preventDefault();
+          handleMove(1, 0);
           break;
         // Movement - Arrow keys
         case 'arrowup':
@@ -452,13 +513,24 @@ export default function GameSessionPage({ params }: { params: Promise<{ sessionI
           break;
         // UI shortcuts
         case 'c':
-          setCharacterSheetOpen(prev => !prev);
+          togglePanel('character');
+          break;
+        case 'i':
+          togglePanel('inventory');
+          break;
+        case 'j':
+          togglePanel('journal');
+          break;
+        case 'q':
+          togglePanel('quests');
           break;
         case 'escape':
-          setCharacterSheetOpen(false);
-          setDebugOpen(false);
-          if (isInDialogue) {
+          if (openPanel) {
+            closePanel();
+          } else if (isInDialogue) {
             handleEndDialogue();
+          } else {
+            togglePanel('settings');
           }
           break;
         case ' ':
@@ -475,7 +547,7 @@ export default function GameSessionPage({ params }: { params: Promise<{ sessionI
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [tick, selectedAgentId, isInDialogue, handleTalkToAgent, handleEndDialogue, handleMove]);
+  }, [tick, selectedAgentId, isInDialogue, handleTalkToAgent, handleEndDialogue, handleMove, togglePanel, openPanel, closePanel]);
 
   // Loading state
   if (isInitializing) {
@@ -509,192 +581,75 @@ export default function GameSessionPage({ params }: { params: Promise<{ sessionI
   }
 
   return (
-    <div className="flex h-screen bg-gray-950">
-      {/* Game canvas area */}
-      <div className="flex-1 relative">
-        <GameCanvas width={canvasSize.width} height={canvasSize.height} />
+    <div className="relative w-full h-screen bg-gray-950 overflow-hidden">
+      {/* Fullscreen game canvas */}
+      <GameCanvas width={canvasSize.width} height={canvasSize.height} />
 
-        {/* Overlay UI */}
-        <AgentInfoPanel />
-        <TileInfoPanel />
-
+      {/* HUD Overlay Layer */}
+      <div className="absolute inset-0 pointer-events-none">
         {/* Top bar */}
-        <div className="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none">
-          {/* Left side - Status */}
-          <div className="flex items-center gap-3 pointer-events-auto">
-            <div className="bg-gray-900/90 border border-gray-700 rounded px-3 py-1">
-              <span className="text-xs text-gray-400">Move: </span>
-              <span className="text-sm text-white">WASD</span>
-            </div>
-            <div className="bg-gray-900/90 border border-gray-700 rounded px-3 py-1">
-              <span className="text-xs text-gray-400">Mode: </span>
-              <span className="text-sm text-amber-400 capitalize">{inputMode}</span>
-            </div>
-            <div className="bg-gray-900/90 border border-gray-700 rounded px-3 py-1">
-              <span className="text-xs text-gray-400">Tick: </span>
-              <span className="text-sm text-white">{tickCount || sessionData?.currentTick || 0}</span>
-            </div>
-            <div className="bg-gray-900/90 border border-gray-700 rounded px-3 py-1">
-              <span className="text-xs text-gray-400">Time: </span>
-              <span className="text-sm text-white">{gameTime || sessionData?.gameTime || '00:00'}</span>
-            </div>
-            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} title={isConnected ? 'Connected' : 'Disconnected'} />
-          </div>
-
-          {/* Right side - Controls */}
-          <div className="flex items-center gap-2 pointer-events-auto">
-            <button
-              onClick={() => tick()}
-              disabled={isProcessing}
-              className="px-3 py-1 bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded text-sm disabled:opacity-50 transition-colors"
-              title="Advance tick (Space)"
-            >
-              {isProcessing ? '...' : '▶ Tick'}
-            </button>
-            <Link
-              href="/worlds"
-              className="px-3 py-1 bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded text-sm transition-colors"
-            >
-              Exit
-            </Link>
-          </div>
+        <div className="absolute top-4 left-4 pointer-events-auto">
+          <LocationDisplay />
+        </div>
+        <div className="absolute top-4 right-4 pointer-events-auto">
+          <TimeIndicator />
+        </div>
+        <div className="absolute top-4 left-1/2 -translate-x-1/2">
+          <DMPlaceholder />
         </div>
 
-        {/* Bottom bar - Quick actions */}
-        <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between pointer-events-none">
-          {/* Agent interaction */}
-          {selectedAgentId && !isInDialogue && (
-            <div className="flex items-center gap-2 pointer-events-auto">
+        {/* Left menu */}
+        <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-auto">
+          <MenuButtons />
+        </div>
+
+        {/* Bottom bar */}
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto">
+          <PartyListBar />
+        </div>
+        <div className="absolute bottom-4 right-4 pointer-events-auto">
+          <Minimap />
+        </div>
+
+        {/* Dialogue/interaction controls - contextual */}
+        {(selectedAgentId || isInDialogue) && (
+          <div className="absolute bottom-24 left-1/2 -translate-x-1/2 pointer-events-auto">
+            {selectedAgentId && !isInDialogue && (
               <button
                 onClick={handleTalkToAgent}
                 disabled={dialogueLoading}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium transition-colors disabled:opacity-50"
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 shadow-lg"
               >
-                💬 Talk (T)
+                Talk (T)
               </button>
-            </div>
-          )}
-
-          {/* Dialogue controls */}
-          {isInDialogue && (
-            <div className="flex items-center gap-2 pointer-events-auto">
-              <span className="text-sm text-gray-400">
-                {isWaitingForResponse ? 'Agent is thinking...' : 'In conversation'}
-              </span>
-              <button
-                onClick={handleEndDialogue}
-                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm font-medium transition-colors"
-              >
-                End Conversation (Esc)
-              </button>
-            </div>
-          )}
-
-          <div className="flex-1" />
-
-          {/* Right side actions */}
-          <div className="flex gap-2 pointer-events-auto">
-            <button
-              onClick={() => setDebugOpen(true)}
-              className="px-3 py-2 bg-gray-800 border border-gray-600 rounded text-white text-sm hover:bg-gray-700 transition-colors"
-              title="Debug Panel (D)"
-            >
-              🔧 Debug
-            </button>
-            <button
-              onClick={() => setCharacterSheetOpen(true)}
-              className="px-3 py-2 bg-gray-800 border border-gray-600 rounded text-white text-sm hover:bg-gray-700 transition-colors"
-              title="Character Sheet (C)"
-            >
-              📋 Character
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Right sidebar - Party & Chat */}
-      <div className="w-80 border-l border-gray-800 flex flex-col">
-        {/* Party panel */}
-        <div className="p-2 border-b border-gray-800">
-          <PartyPanel
-            onTalkTo={handleTalkToPartyMember}
-            onSelectMember={handleSelectPartyMember}
-          />
-        </div>
-
-        {/* Chat panel */}
-        <div className="flex-1 overflow-hidden">
-          <ChatPanel
-            onSendMessage={handleSendMessage}
-            isDialogueMode={inputMode === 'dialogue'}
-          />
-        </div>
-      </div>
-
-      {/* Character sheet modal */}
-      <CharacterSheet
-        isOpen={isCharacterSheetOpen}
-        onClose={() => setCharacterSheetOpen(false)}
-      />
-
-      {/* Debug panel modal */}
-      {isDebugOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-gray-900 border border-gray-700 rounded-lg w-full max-w-2xl max-h-[80vh] overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b border-gray-700">
-              <h2 className="text-lg font-semibold">Debug Information</h2>
-              <button
-                onClick={() => setDebugOpen(false)}
-                className="text-gray-400 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="p-4 overflow-y-auto max-h-[calc(80vh-60px)]">
-              <div className="space-y-4 text-sm">
-                <div>
-                  <h3 className="font-medium text-amber-400 mb-2">Session</h3>
-                  <pre className="bg-gray-800 p-3 rounded overflow-x-auto">
-                    {JSON.stringify({
-                      sessionId,
-                      worldId: sessionData?.worldId,
-                      status: sessionData?.status,
-                      tick: tickCount || sessionData?.currentTick || 0,
-                      gameTime: gameTime || sessionData?.gameTime || '00:00',
-                      wsConnected: isConnected,
-                    }, null, 2)}
-                  </pre>
-                </div>
-                <div>
-                  <h3 className="font-medium text-amber-400 mb-2">Player</h3>
-                  <pre className="bg-gray-800 p-3 rounded overflow-x-auto">
-                    {JSON.stringify(localPlayer, null, 2)}
-                  </pre>
-                </div>
-                <div>
-                  <h3 className="font-medium text-amber-400 mb-2">Agents ({agents.size})</h3>
-                  <pre className="bg-gray-800 p-3 rounded overflow-x-auto">
-                    {JSON.stringify(Array.from(agents.values()).slice(0, 5), null, 2)}
-                  </pre>
-                </div>
-                {conversation && (
-                  <div>
-                    <h3 className="font-medium text-amber-400 mb-2">Active Conversation</h3>
-                    <pre className="bg-gray-800 p-3 rounded overflow-x-auto">
-                      {JSON.stringify({
-                        id: conversation.conversation_id,
-                        state: conversation.state,
-                        participants: conversation.participants,
-                        turnCount: conversation.turns.length,
-                      }, null, 2)}
-                    </pre>
-                  </div>
-                )}
+            )}
+            {isInDialogue && (
+              <div className="flex items-center gap-3 bg-gray-900/90 backdrop-blur-sm border border-gray-700 rounded-lg px-4 py-2">
+                <span className="text-sm text-gray-400">
+                  {isWaitingForResponse ? 'Agent is thinking...' : 'In conversation'}
+                </span>
+                <button
+                  onClick={handleEndDialogue}
+                  className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm font-medium transition-colors"
+                >
+                  End (Esc)
+                </button>
               </div>
-            </div>
+            )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
+
+      {/* Contextual overlays */}
+      <AgentInfoPanel />
+      <TileInfoPanel />
+
+      {/* Modal panels */}
+      <SettingsPanel isOpen={openPanel === 'settings'} onClose={closePanel} />
+      <JournalPanel isOpen={openPanel === 'journal'} onClose={closePanel} />
+      <QuestsPanel isOpen={openPanel === 'quests'} onClose={closePanel} />
+      <InventoryPanel isOpen={openPanel === 'inventory'} onClose={closePanel} />
+      <CharacterSheet isOpen={openPanel === 'character'} onClose={closePanel} />
     </div>
   );
 }

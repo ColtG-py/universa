@@ -2,17 +2,31 @@
 
 /**
  * GameView Component
- * Main game view combining canvas, chat, and UI panels.
+ * Main game view with fullscreen canvas and HUD overlay.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useGameStore } from '@/stores/gameStore';
-import ChatPanel from '@/components/ui/ChatPanel';
+
+// HUD Components
+import LocationDisplay from '@/components/ui/LocationDisplay';
+import TimeIndicator from '@/components/ui/TimeIndicator';
+import MenuButtons from '@/components/ui/MenuButtons';
+import PartyListBar from '@/components/ui/PartyListBar';
+import Minimap from '@/components/ui/Minimap';
+import DMPlaceholder from '@/components/ui/DMPlaceholder';
+
+// Panel Components
+import SettingsPanel from '@/components/ui/SettingsPanel';
+import JournalPanel from '@/components/ui/JournalPanel';
+import QuestsPanel from '@/components/ui/QuestsPanel';
+import InventoryPanel from '@/components/ui/InventoryPanel';
 import CharacterSheet from '@/components/ui/CharacterSheet';
+
+// Overlay Components
 import AgentInfoPanel from '@/components/ui/AgentInfoPanel';
 import TileInfoPanel from '@/components/ui/TileInfoPanel';
-import type { ChatMessage } from '@/types/game';
 
 // Dynamic import for GameCanvas to avoid SSR issues with PixiJS
 const GameCanvas = dynamic(() => import('./GameCanvas'), {
@@ -29,22 +43,18 @@ interface GameViewProps {
 }
 
 export default function GameView({ worldId }: GameViewProps) {
-  const [isCharacterSheetOpen, setCharacterSheetOpen] = useState(false);
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
 
-  const localPlayer = useGameStore((state) => state.localPlayer);
-  const addMessage = useGameStore((state) => state.addMessage);
-  const inputMode = useGameStore((state) => state.inputMode);
+  const openPanel = useGameStore((state) => state.openPanel);
+  const setOpenPanel = useGameStore((state) => state.setOpenPanel);
+  const togglePanel = useGameStore((state) => state.togglePanel);
 
-  // Handle window resize
+  // Handle window resize - now fullscreen
   useEffect(() => {
     const updateSize = () => {
-      // Account for chat panel width (320px) and some padding
-      const chatPanelWidth = 320;
-      const padding = 32;
       setCanvasSize({
-        width: Math.max(600, window.innerWidth - chatPanelWidth - padding),
-        height: Math.max(400, window.innerHeight - 100),
+        width: window.innerWidth,
+        height: window.innerHeight,
       });
     };
 
@@ -53,27 +63,8 @@ export default function GameView({ worldId }: GameViewProps) {
     return () => window.removeEventListener('resize', updateSize);
   }, []);
 
-  // Handle chat messages
-  const handleSendMessage = useCallback(
-    (content: string, channel: ChatMessage['channel']) => {
-      if (!localPlayer) return;
-
-      const message: ChatMessage = {
-        id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        senderId: localPlayer.id,
-        senderName: localPlayer.name,
-        senderType: 'player',
-        content,
-        timestamp: Date.now(),
-        channel,
-      };
-
-      addMessage(message);
-
-      // TODO: Broadcast to Supabase realtime
-    },
-    [localPlayer, addMessage]
-  );
+  // Close panel helper
+  const closePanel = () => setOpenPanel(null);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -88,56 +79,73 @@ export default function GameView({ worldId }: GameViewProps) {
 
       switch (e.key.toLowerCase()) {
         case 'c':
-          setCharacterSheetOpen((prev) => !prev);
+          togglePanel('character');
+          break;
+        case 'i':
+          togglePanel('inventory');
+          break;
+        case 'j':
+          togglePanel('journal');
+          break;
+        case 'q':
+          togglePanel('quests');
           break;
         case 'escape':
-          setCharacterSheetOpen(false);
+          if (openPanel) {
+            closePanel();
+          } else {
+            togglePanel('settings');
+          }
           break;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [openPanel, togglePanel]);
 
   return (
-    <div className="flex h-screen bg-gray-950">
-      {/* Game canvas area */}
-      <div className="flex-1 relative">
-        <GameCanvas width={canvasSize.width} height={canvasSize.height} />
+    <div className="relative w-full h-screen bg-gray-950 overflow-hidden">
+      {/* Fullscreen game canvas */}
+      <GameCanvas width={canvasSize.width} height={canvasSize.height} />
 
-        {/* Overlay UI */}
-        <AgentInfoPanel />
-        <TileInfoPanel />
-
-        {/* Mode indicator */}
-        <div className="absolute top-4 left-4 bg-gray-900/80 border border-gray-700 rounded px-3 py-1">
-          <span className="text-xs text-gray-400">Mode: </span>
-          <span className="text-sm text-amber-400 capitalize">{inputMode}</span>
+      {/* HUD Overlay Layer */}
+      <div className="absolute inset-0 pointer-events-none">
+        {/* Top bar */}
+        <div className="absolute top-4 left-4 pointer-events-auto">
+          <LocationDisplay />
+        </div>
+        <div className="absolute top-4 right-4 pointer-events-auto">
+          <TimeIndicator />
+        </div>
+        <div className="absolute top-4 left-1/2 -translate-x-1/2">
+          <DMPlaceholder />
         </div>
 
-        {/* Quick actions bar */}
-        <div className="absolute bottom-4 right-4 flex gap-2">
-          <button
-            onClick={() => setCharacterSheetOpen(true)}
-            className="px-3 py-2 bg-gray-800 border border-gray-600 rounded text-white text-sm hover:bg-gray-700 transition-colors"
-            title="Character Sheet (C)"
-          >
-            📋 Character
-          </button>
+        {/* Left menu */}
+        <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-auto">
+          <MenuButtons />
+        </div>
+
+        {/* Bottom bar */}
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto">
+          <PartyListBar />
+        </div>
+        <div className="absolute bottom-4 right-4 pointer-events-auto">
+          <Minimap />
         </div>
       </div>
 
-      {/* Chat panel */}
-      <div className="w-80 border-l border-gray-800">
-        <ChatPanel onSendMessage={handleSendMessage} />
-      </div>
+      {/* Contextual overlays */}
+      <AgentInfoPanel />
+      <TileInfoPanel />
 
-      {/* Character sheet modal */}
-      <CharacterSheet
-        isOpen={isCharacterSheetOpen}
-        onClose={() => setCharacterSheetOpen(false)}
-      />
+      {/* Modal panels */}
+      <SettingsPanel isOpen={openPanel === 'settings'} onClose={closePanel} />
+      <JournalPanel isOpen={openPanel === 'journal'} onClose={closePanel} />
+      <QuestsPanel isOpen={openPanel === 'quests'} onClose={closePanel} />
+      <InventoryPanel isOpen={openPanel === 'inventory'} onClose={closePanel} />
+      <CharacterSheet isOpen={openPanel === 'character'} onClose={closePanel} />
     </div>
   );
 }

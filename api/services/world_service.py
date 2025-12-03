@@ -25,6 +25,8 @@ from api.services.supabase_client import get_supabase_client, SupabaseClient
 logger = logging.getLogger(__name__)
 
 # Chunk size for database storage
+# NOTE: Existing worlds in DB were generated with CHUNK_SIZE=32
+# New worlds should use 256, but we need 32 to read existing data
 CHUNK_SIZE = 32
 
 

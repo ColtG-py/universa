@@ -73,8 +73,10 @@ function GameSetupContent() {
         worldId,
         {
           name: playerName.trim(),
-          spawn_x: spawnSettlement?.x || 512,
-          spawn_y: spawnSettlement?.y || 512,
+          // Default spawn to (32, 32) - center of available world data
+          // Existing world chunks only cover tiles 0-63
+          spawn_x: spawnSettlement?.x || 32,
+          spawn_y: spawnSettlement?.y || 32,
         },
         {
           size: partySize,

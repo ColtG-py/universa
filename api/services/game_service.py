@@ -113,8 +113,10 @@ class GameService:
             default_settings.update(settings)
 
         # Get spawn location
-        spawn_x = player_config.get("spawn_x", 512)
-        spawn_y = player_config.get("spawn_y", 512)
+        # NOTE: Existing world data only covers tiles 0-63 (4 chunks of 32x32)
+        # Default spawn to center of available area
+        spawn_x = player_config.get("spawn_x", 32)
+        spawn_y = player_config.get("spawn_y", 32)
 
         # If spawn_settlement_id provided, get settlement location
         if player_config.get("spawn_settlement_id") and self._world_service:

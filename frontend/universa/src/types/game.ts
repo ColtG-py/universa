@@ -146,3 +146,55 @@ export interface PlayerAction {
   skillName?: string;
   dialogueOption?: string;
 }
+
+// Game time state
+export interface GameTime {
+  hour: number;        // 0-23
+  minute: number;      // 0-59
+  day: number;         // Day count
+}
+
+// Current location info
+export interface CurrentLocation {
+  name: string;
+  type: 'settlement' | 'wilderness' | 'dungeon' | 'road';
+}
+
+// Party member slot
+export interface PartyMember {
+  agentId: string;
+  slot: 0 | 1 | 2 | 3;
+  isActive: boolean;
+}
+
+// UI Panel types
+export type UIPanel = 'settings' | 'journal' | 'quests' | 'inventory' | 'character' | null;
+
+// Journal entry
+export interface JournalEntry {
+  id: string;
+  title: string;
+  content: string;
+  category: 'story' | 'notes' | 'discoveries';
+  timestamp: number;
+  day: number;
+}
+
+// Quest types
+export interface Quest {
+  id: string;
+  title: string;
+  description: string;
+  objectives: QuestObjective[];
+  status: 'active' | 'completed' | 'failed';
+  giverName?: string;
+  reward?: string;
+}
+
+export interface QuestObjective {
+  id: string;
+  description: string;
+  isCompleted: boolean;
+  current?: number;
+  target?: number;
+}

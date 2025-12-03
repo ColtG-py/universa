@@ -176,12 +176,14 @@ export default function GameCanvas({ width = 800, height = 600 }: GameCanvasProp
         // Get color based on biome
         let color = BIOME_COLORS[tile?.biomeType || 'temperate_grassland'] || 0x7cba5f;
 
-        // Adjust for elevation
+        // Adjust for elevation (clamp to reasonable range for color adjustment)
         if (tile) {
-          const elevationFactor = Math.min(tile.elevation / 100, 1);
+          // Clamp elevation factor to [-1, 1] range
+          const elevationFactor = Math.max(-1, Math.min(tile.elevation / 500, 1));
           // Darken for lower elevation, lighten for higher
           if (tile.elevation < 0) {
-            color = adjustBrightness(color, 0.7 + elevationFactor * 0.3);
+            // Factor ranges from 0.5 (very deep) to 0.8 (near surface)
+            color = adjustBrightness(color, 0.5 + (1 + elevationFactor) * 0.3);
           } else if (tile.elevation > 50) {
             color = adjustBrightness(color, 1 + elevationFactor * 0.2);
           }
